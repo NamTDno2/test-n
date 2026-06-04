@@ -1,0 +1,46 @@
+[
+  {
+    "sha256": "63374312b642c727d0ab3ded798c2e3f7f3332f4f494761000430a7245ffeda4",
+    "mtime": "2026-03-15 13:24:17",
+    "size_mb": 0.25577449798583984,
+    "num_tensors": 8,
+    "total_params": 66049,
+    "norm_sum": 57.16163370013237,
+    "domain_idx": 3,
+    "domain_name": "MP-DocVQA",
+    "recorded_at": "2026-03-15 13:28:14"
+  },
+  {
+    "sha256": "5927d3d33cce1d98a5bad5a36a7b4ebb7b47b354514773576711df0452040a94",
+    "mtime": "2026-03-15 13:47:31",
+    "size_mb": 0.25577449798583984,
+    "num_tensors": 8,
+    "total_params": 66049,
+    "norm_sum": 59.52549406886101,
+    "domain_idx": 4,
+    "domain_name": "SciQAG",
+    "recorded_at": "2026-03-15 13:47:35"
+  },
+  {
+    "sha256": "707b8b90bcbb6d9df9aad5f76e73a9683896843d5f69fc96b8d4a4905a1fb929",
+    "mtime": "2026-03-15 15:40:36",
+    "size_mb": 0.25577449798583984,
+    "num_tensors": 8,
+    "total_params": 66049,
+    "norm_sum": 62.36000218987465,
+    "domain_idx": 5,
+    "domain_name": "SciQAG",
+    "recorded_at": "2026-03-15 15:40:49"
+  },
+  {
+    "sha256": "87c1354c84e939e61b5c870e8015c4e1b9f6e25644c756c8b750139e509740b1",
+    "mtime": "2026-03-15 15:59:06",
+    "size_mb": 0.25577449798583984,
+    "num_tensors": 8,
+    "total_params": 66049,
+    "norm_sum": 63.212206676602364,
+    "domain_idx": 6,
+    "domain_name": "DUDE",
+    "recorded_at": "2026-03-15 15:59:09"
+  }
+]

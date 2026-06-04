@@ -1,0 +1,52 @@
+﻿lambda_rel,doc_name,domain,question,layout_retrieved,gt,first_hit_rank,recall
+0.5,NYSE_CAT_2021,Financial report,"Which segment has the highest number of manufacturing facilities located in Texas, USA?","[5219, 19349, 8323, 3971, 8328, 5215, 8312, 3999, 19285, 20086]",[5219],1,1.0
+0.5,NYSE_CAT_2021,Financial report,What was the company's total sales and revenues for Construction Industries in North America in 2021?,"[5264, 5331, 5282, 5265, 5310, 5326, 5914, 5311, 4996, 5276]",[5265],4,1.0
+0.5,NYSE_CAT_2021,Financial report,What was the operating profit for the full year 2020?,"[8648, 8632, 8663, 14261, 8611, 12207, 9305, 5267, 5526, 11811]",[5272],Not Found,0.0
+0.5,NYSE_CAT_2021,Financial report,Which region saw the highest increase in the number of full-time employees from 2020 to 2021?,"[5084, 15234, 1901, 907, 18043, 17056, 14282, 14762, 9991, 4692]","[5067, 5084]",1,0.5
+0.5,NYSE_CAT_2021,Financial report,What is the average annual total sales and revenues for Asia/Pacific from the years 2019 to 2021?,"[6750, 4692, 1168, 19177, 5914, 5265, 6436, 4693, 5262, 4883]","[5484, 5494]",Not Found,0.0
+0.5,NYSE_CAT_2021,Financial report,What was the company's total sales figure for Energy & Transportation in the fourth quarter of 2021?,"[5342, 5311, 5338, 5310, 5337, 5340, 5300, 5319, 5312, 19306]",[5337],5,1.0
+0.5,NYSE_CAT_2021,Financial report,How many parts does the report consist of?,"[11066, 8953, 5016, 5411, 17536, 5211, 19391, 2027, 4163, 4152]","[4985, 4986, 4987]",Not Found,0.0
+0.5,NYSE_IBM_2020,Financial report,"How has the expenditure on research, development, and engineering of this company changed over the three years?","[6445, 19191, 19286, 6444, 6414, 19287, 6389, 19352, 1902, 6601]",[19192],Not Found,0.0
+0.5,NYSE_IBM_2020,Financial report,What was the total consolidated revenue of the company by the end of 2020?,"[7990, 4158, 5381, 6932, 11305, 2997, 19343, 11306, 19198, 7993]",[19132],Not Found,0.0
+0.5,NYSE_DHR_2020,Financial report,What was the underlying cause of the net discrete tax gains in 2020?,"[13008, 14306, 13009, 14305, 9318, 14309, 14308, 3025, 8049, 19395]",[9318],5,1.0
+0.5,NYSE_DHR_2020,Financial report,What was the core revenue growth percentage including Cytiva for Danaher in 2020?,"[8170, 8587, 8605, 8803, 8604, 9303, 8441, 8601, 8607, 9305]",[8170],1,1.0
+0.5,NYSE_DHR_2020,Financial report,Who is the Chairman of the Board of the company?,"[13299, 5991, 16513, 1448, 1450, 7215, 8548, 9253, 3506, 7674]",[9340],Not Found,0.0
+0.5,NYSE_DHR_2020,Financial report,What is the total amount of the company's long-term debt for the year 2020?,"[7875, 3409, 19921, 1068, 3095, 8841, 19919, 7880, 19872, 3097]",[8157],Not Found,0.0
+0.5,NYSE_BAC_2020,Financial report,What was the percentage change in the net charge-offs for home equity from 2019 to 2020?,"[2363, 2395, 2390, 2068, 2362, 2377, 2373, 2030, 2413, 15336]",[2358],Not Found,0.0
+0.5,NYSE_BAC_2020,Financial report,What criteria are used to differentiate core from non-core consumer real estate loans?,"[2360, 2931, 2945, 2363, 2930, 2929, 2952, 2362, 2953, 2748]",[2931],2,1.0
+0.5,NYSE_BAC_2020,Financial report,What is the percentage change in the company's market capitalization from 2018 to 2020?,"[2030, 2029, 1835, 14361, 8844, 19737, 19775, 5428, 11101, 2092]",[1835],3,1.0
+0.5,NYSE_BAC_2020,Financial report,Did the KBW Bank Sector Index ever surpass the S&P 500 in terms of total cumulative shareholder return during the years 2015 to 2020?,"[1836, 1837, 20152, 1835, 20153, 20161, 7382, 20155, 6333, 20157]",[1836],1,1.0
+0.5,NYSE_BAC_2020,Financial report,By how much did the number of Erica users increase from 2018 to 2019?,"[1594, 1596, 1598, 1361, 18772, 1631, 15093, 11735, 14230, 11198]","[2030, 2031]",Not Found,0.0
+0.5,NYSE_BAC_2020,Financial report,What is the general trend of the company's net income from 2015 to 2020?,"[1316, 7601, 12990, 1341, 3200, 1835, 2120, 6988, 2695, 15295]",[1316],1,1.0
+0.5,NYSE_BAC_2020,Financial report,Which business segment contributed the most to the revenue in FY2020?,"[4689, 8314, 4692, 4693, 4658, 8661, 15175, 4688, 7574, 2886]",[1341],Not Found,0.0
+0.5,NYSE_HDB_2021,Financial report,Has HDFC Bank initiated a commitment to the Science Based Targets initiative (SBTi)?,"[10184, 10157, 10211, 13911, 6496, 10081, 7255, 11256, 9882, 10032]",[10211],3,1.0
+0.5,NYSE_HDB_2021,Financial report,What are some of the focus areas of HDFC Bank's ESG strategy?,"[9387, 10149, 9879, 16975, 9876, 1819, 11003, 12963, 10616, 18756]",[10149],2,1.0
+0.5,NYSE_HDB_2021,Financial report,What was the Interest Income of the company in the financial year 2013-2014?,"[17881, 835, 761, 15197, 19197, 19182, 837, 2744, 838, 17880]",[10962],Not Found,0.0
+0.5,NYSE_HDB_2021,Financial report,What are the company's total GHG emissions for FY21?,"[10184, 9847, 10235, 9516, 10224, 10240, 1157, 9795, 9743, 10619]",[10236],Not Found,0.0
+0.5,NYSE_HDB_2021,Financial report,How many total full-time employees does the company have?,"[17253, 14858, 13744, 8342, 5084, 6014, 17490, 15225, 14069, 17251]",[10526],Not Found,0.0
+0.5,NYSE_HSBC_2020,Financial report,What is the Group's net deferred tax asset in 2020?,"[18104, 18105, 18108, 9059, 2226, 7852, 9067, 15194, 19840, 7853]",[18104],1,1.0
+0.5,NYSE_HSBC_2020,Financial report,What are the primary objectives of HSBC's program regarding the Ibor transition through 2021?,"[14412, 15479, 15477, 15478, 15483, 15476, 16970, 14561, 15492, 16984]",[15479],2,1.0
+0.5,NYSE_HSBC_2020,Financial report,What is the company's total reported revenue for Europe and MENA combined in 2020?,"[15830, 15331, 15328, 16113, 16112, 15329, 6750, 2098, 1168, 19150]",[15328],3,1.0
+0.5,NYSE_HSBC_2020,Financial report,What is the percentage of female representation on the Holdings Board?,"[14911, 16495, 10714, 4744, 16870, 18517, 13403, 14096, 16690, 16727]",[14069],Not Found,0.0
+0.5,NYSE_HSBC_2020,Financial report,Which country had the largest number of customer accounts in Asia in 2020?,"[13773, 17050, 13907, 15270, 15147, 14762, 15898, 14321, 8299, 14297]",[15270],4,1.0
+0.5,NYSE_HSBC_2020,Financial report,How much did the customer accounts for Switzerland grow from 2019 to 2020?,"[15270, 19282, 18110, 14335, 9006, 12015, 16172, 18111, 9077, 7928]",[15270],1,1.0
+0.5,NYSE_HSBC_2020,Financial report,What is the topic of contents on page 4?,"[11353, 11283, 11398, 2648, 3554, 2644, 5619, 2646, 5378, 7588]","[13717, 13718]",Not Found,0.0
+0.5,NYSE_AXP_2021,Financial report,What was the percentage change in net interest income from 2020 to 2021 for Global Commercial Services(GCS)?,"[1963, 1965, 18132, 3401, 14304, 2068, 16060, 2105, 15295, 487]",[457],Not Found,0.0
+0.5,NYSE_AXP_2021,Financial report,"What was the net interest income for the year ended December 31, 2021?","[1963, 500, 487, 15197, 3401, 17794, 516, 2085, 20027, 531]",[457],Not Found,0.0
+0.5,NYSE_AXP_2021,Financial report,What is the largest customer segment for the company in FY 2021?,"[1341, 10325, 6751, 104, 10858, 3047, 6437, 5728, 6115, 9943]","[104, 92]",4,0.5
+0.5,NYSE_AXP_2021,Financial report,What was the total increase in expenses of the company from 2020 to 2021?,"[516, 456, 14361, 4381, 1168, 5267, 14288, 19594, 15330, 18137]",[456],2,1.0
+0.5,NYSE_CVX_2021,Financial report,How much of Chevron's year-end 2021 environmental reserves balance was related to its U.S. downstream operations?,"[7952, 8947, 7855, 7852, 7700, 7253, 7192, 7620, 7701, 7935]",[7952],1,1.0
+0.5,NYSE_CVX_2021,Financial report,Where are Chevron's corporate headquarters located?,"[8131, 8132, 7680, 7600, 7668, 7682, 7665, 7669, 7601, 7877]",[8133],Not Found,0.0
+0.5,NYSE_CVX_2021,Financial report,By how much did the company's net proved reserves of natural gas change from 2019 to 2021?,"[7402, 7468, 8025, 8000, 8085, 8047, 7190, 7469, 7401, 7697]","[8000, 7998]",4,0.5
+0.5,NYSE_CVX_2021,Financial report,What was the net income attributable to Chevron Corporation for the year 2021?,"[7599, 7601, 7430, 7431, 7837, 7701, 7769, 7815, 7770, 7661]",[7391],Not Found,0.0
+0.5,NYSE_CVX_2021,Financial report,What is the brief summary of page 43 in the document?,"[2651, 4072, 18741, 11018, 10718, 9077, 16753, 5616, 19179, 63]","[7555, 7556]",Not Found,0.0
+0.5,NYSE_BRK-A_2021,Financial report,"Did the revenues for the manufacturing, service, and retailing businesses of K-47 increase from 2020 to 2021?","[4171, 4217, 4200, 4201, 4174, 5247, 4188, 4230, 4139, 4203]","[4688, 4686]",Not Found,0.0
+0.5,NYSE_BRK-A_2021,Financial report,What was the percentage change in pre-tax earnings for K-47's service and retailing businesses from 2019 to 2020?,"[4195, 4203, 4174, 4180, 4201, 4213, 4231, 4136, 4188, 4153]",[4028],Not Found,0.0
+0.5,NYSE_BRK-A_2021,Financial report,What is the total number of leased properties across the non-U.S. Manufacturing segment?,"[2646, 2936, 2503, 2438, 2499, 2648, 3971, 2647, 2930, 2452]","[3963, 3971]",7,0.5
+0.5,NYSE_BRK-A_2021,Financial report,What was the dividend income of the company for the year 2021?,"[3408, 4071, 4074, 7661, 17806, 12666, 17818, 17887, 8840, 7850]",[4071],2,1.0
+0.5,NYSE_BRK-A_2021,Financial report,What is the total Facility Net Capacity for all energy sources listed in the company's report?,"[3963, 3964, 1817, 4113, 7507, 7192, 10207, 4813, 10305, 7494]",[3963],1,1.0
+0.5,NYSE_BRK-A_2021,Financial report,"Who has served the longest in their current position at the Registrant, and since when?","[3977, 5203, 6043, 6044, 6053, 143, 4705, 6047, 16649, 3976]",[3977],1,1.0
+0.5,NYSE_BRK-A_2021,Financial report,What was the total revenue of Berkshire Hathaway Inc. in 2021?,"[4379, 3996, 4207, 4723, 4337, 4721, 4343, 4339, 4722, 3999]","[4377, 4378]",Not Found,0.0
+0.5,NYSE_CRM_2020,Financial report,Explain how the company managed the net cash provided by financing activities in fiscal 2020.,"[6475, 6476, 6469, 19273, 5412, 19031, 6467, 6472, 5401, 6470]","[6475, 6462]",1,0.5
+0.5,NYSE_CRM_2020,Financial report,Has Salesforce provided any solutions free of charge during the COVID-19 crisis?,"[6028, 6024, 13837, 6023, 10033, 11078, 14461, 18855, 11344, 14686]",[6023],4,1.0
+0.5,NYSE_CRM_2020,Financial report,By how much did total stockholders' equity for the company increase from 2016 to 2020?,"[2697, 6594, 6609, 2029, 15359, 15240, 7598, 2696, 17816, 7564]",[6594],2,1.0

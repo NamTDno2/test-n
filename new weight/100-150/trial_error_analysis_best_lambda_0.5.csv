@@ -1,0 +1,107 @@
+lambda_rel,doc_name,domain,question,layout_retrieved,gt,first_hit_rank,recall
+0.5,Independents-Report,Research report / Introduction,What's the percentage of people who are democrats and voted in the last election compared to the entire population in 2018?,"[17532, 17534, 17535, 17533, 16819, 19390, 17538, 3721, 17539, 17536]","[17518, 17522, 17523, 17524, 17527, 17534, 17535]",2,0.29
+0.5,Independents-Report,Research report / Introduction,"According to this report, which group is greater in population in 2018? Republican who are hispanic, or no leans who are male?","[17615, 17612, 17537, 17555, 17536, 17584, 17524, 17569, 17573, 17605]","[17522, 17518, 17615]",1,0.33
+0.5,Independents-Report,Research report / Introduction,"According to this report, how many charts provide no opinions only from the ""no lean"" group?","[17562, 7064, 11947, 10529, 17566, 17565, 17563, 17564, 17561, 10576]","[17555, 17573]",Not Found,0.0
+0.5,GPL-Graduate-Studies-Professional-Learning-Brochure-Jul-2021,Brochure,How many people with scarf are there in  Page 5?,"[12907, 6884, 12859, 11584, 13591, 10187, 11436, 13080, 10278, 11874]",[12845],Not Found,0.0
+0.5,GPL-Graduate-Studies-Professional-Learning-Brochure-Jul-2021,Brochure,Which program has the longest time period among all the leadership programmes?,"[50, 10785, 10787, 12686, 11776, 15975, 17945, 378, 54, 19185]",[12947],Not Found,0.0
+0.5,GPL-Graduate-Studies-Professional-Learning-Brochure-Jul-2021,Brochure,Which programme by coursework with disciplinary content allows to have the maximum of 3 years full-time duration? Write down the answer with alphabetical order. ,"[12866, 12947, 12864, 13145, 17434, 264, 5116, 9767, 17387, 17386]","[12864, 12859]",3,0.5
+0.5,DSA-278777,Guidebook,What is the minimum voltage of the symbol at the bottom left corner in the Figure of EPROM programming and verification waveforms? Write down the answer in float format.,"[8065, 8078, 8068, 8038, 8048, 8103, 8101, 8102, 8043, 8042]","[8064, 8065]",1,0.5
+0.5,DSA-278777,Guidebook,"How many waveform figures are contained in the guidebook for 272318? List the page numbers in the list format in ascending order,e.g., [""1"",""2""]","[6430, 8049, 8106, 12325, 10892, 12818, 103, 8107, 5972, 13148]","[8032, 8065, 8070, 8038, 8103, 8041, 8043, 8078]",Not Found,0.0
+0.5,DSA-278777,Guidebook,How many connection graphs are contained in the guidebook?,"[6380, 6382, 6379, 38, 6377, 6436, 6381, 6419, 8031, 6376]","[7961, 7988]",Not Found,0.0
+0.5,Campaign_038_Introducing_AC_Whitepaper_v5e,Brochure,What is the central component of the figure at page 17?,"[15788, 15789, 18717, 11335, 19089, 15792, 15790, 14354, 15791, 926]",[927],Not Found,0.0
+0.5,Campaign_038_Introducing_AC_Whitepaper_v5e,Brochure,How many cameras outside the China area does the figure at Page 19 has? Write the answer in float format.,"[6838, 971, 15487, 12649, 6839, 6466, 10325, 12392, 11703, 4207]",[942],Not Found,0.0
+0.5,Campaign_038_Introducing_AC_Whitepaper_v5e,Brochure,How many website url does the document have?,"[971, 7941, 970, 11421, 14369, 12822, 6849, 14508, 14792, 12377]","[960, 834, 963, 968, 970, 971, 974, 924]",1,0.25
+0.5,Campaign_038_Introducing_AC_Whitepaper_v5e,Brochure,How many data centers does the China's largest cloud provider have?,"[809, 810, 811, 808, 813, 812, 828, 806, 883, 882]","[800, 809, 811]",1,0.67
+0.5,Campaign_038_Introducing_AC_Whitepaper_v5e,Brochure,Which cities does the China's largest cloud provider have teams? Write the answer in list format with alphabetical rder.,"[6800, 812, 1693, 13100, 1692, 13238, 13752, 1686, 13225, 13138]","[800, 808, 809, 811, 812]",2,0.2
+0.5,ISEP_student_handbook_2020,Brochure,Which compulsory ISEP courses does the students must have? Write the answer in list format in ascending order. ,"[17383, 17309, 17402, 17384, 17387, 17323, 17386, 17494, 17385, 17325]","[17307, 17309]",2,0.5
+0.5,Guide-for-international-students-web,Guidebook,What is NTU standing for in this guidebook?,"[13028, 13602, 13547, 13352, 13588, 13104, 13603, 13135, 13606, 13601]",[13026],Not Found,0.0
+0.5,Guide-for-international-students-web,Guidebook,Where did Terry Tan study the foundation course before he progressed to NTU?,"[13273, 13274, 13271, 13272, 17512, 13288, 13591, 13536, 13533, 13324]","[13273, 13267]",1,0.5
+0.5,COSTCO_2021_10K,Financial report,What is common equity  for COSTCO in FY2021? ,"[227, 224, 229, 226, 225, 228, 517, 515, 505, 514]",[513],Not Found,0.0
+0.5,COSTCO_2021_10K,Financial report,What is total long-term Liabilities for COSTCO in FY 2021? Anwser in millions,"[224, 505, 227, 226, 229, 228, 225, 515, 673, 517]",[513],Not Found,0.0
+0.5,COSTCO_2021_10K,Financial report,what is EBITDA  for costco in FY2021?,"[16628, 3554, 3558, 16277, 8671, 5251, 1802, 5250, 13755, 1691]","[505, 515, 517]",Not Found,0.0
+0.5,COSTCO_2021_10K,Financial report,what is long-term debt of  Costco in FY 2021? Anwser in millions.,"[673, 513, 525, 376, 391, 713, 505, 719, 234, 277]","[513, 629, 630, 632, 633, 634]",2,0.17
+0.5,COSTCO_2021_10K,Financial report,what is total debt of COSTCO in FY 2021?Answer in millions.,"[515, 517, 505, 518, 227, 225, 228, 224, 506, 507]","[513, 629, 630, 632, 633, 634]",Not Found,0.0
+0.5,COSTCO_2021_10K,Financial report,what is total debt to EBITDA ratio of COSTCO in FY2021?round your answer to three decimal places.,"[6529, 12360, 7509, 3556, 2329, 3554, 6473, 6479, 11287, 14462]","[513, 515, 517, 505, 629, 630, 632, 633, 634]",Not Found,0.0
+0.5,COSTCO_2021_10K,Financial report,what is total liabilities for COSTCO in FY 2021?Answer in millions.,"[515, 505, 517, 224, 228, 225, 229, 227, 226, 507]",[513],Not Found,0.0
+0.5,COSTCO_2021_10K,Financial report,what is Long-term Debt to Total Liabilities for COSTCO in FY2021? Round your answer to two decimal places.,"[12048, 10333, 630, 7449, 7450, 7330, 629, 10979, 10982, 7339]","[513, 629, 630, 632, 633, 634]",3,0.33
+0.5,COSTCO_2021_10K,Financial report,What is total liabilities for costco in FY 2021?,"[673, 234, 266, 525, 523, 713, 513, 492, 717, 738]","[505, 513]",7,0.5
+0.5,COSTCO_2021_10K,Financial report,"what is total debt to total assets  for costco in FY 2021?
+
+","[12057, 10982, 12331, 12204, 10979, 12048, 614, 12205, 12388, 11715]","[513, 629, 630, 632, 633, 634]",Not Found,0.0
+0.5,COSTCO_2021_10K,Financial report,what is Operating cash flow to Current Liabilitiesfor COSTCO in FY2021? Round your answer to three decimal places.,"[513, 632, 10792, 426, 658, 544, 636, 630, 12345, 427]","[513, 515, 517]",1,0.33
+0.5,COSTCO_2021_10K,Financial report,How much shares did COSTCO repurchase in FY2021?,"[515, 517, 224, 227, 505, 514, 518, 503, 507, 228]","[441, 427]",Not Found,0.0
+0.5,COSTCO_2021_10K,Financial report,"How much did COSTCO spend on repurchasing of common stock in FY2021?Answer in millions.
+","[515, 517, 505, 227, 375, 224, 228, 642, 513, 229]","[441, 427]",Not Found,0.0
+0.5,COSTCO_2021_10K,Financial report,What does Costco rely heavily on for its financial performance in FY2021?,"[2830, 293, 14142, 300, 5434, 3052, 15092, 8820, 283, 15166]",[282],Not Found,0.0
+0.5,COSTCO_2021_10K,Financial report,How many membership warehouses did COSTCO operate at 2021?,"[505, 518, 514, 503, 507, 224, 234, 229, 225, 517]",[360],Not Found,0.0
+0.5,D19-1539,Academic paper,What training data were used for the models in this study?,"[6554, 27, 6552, 29, 6513, 6551, 6556, 6159, 26, 25]","[6530, 6519]",Not Found,0.0
+0.5,D19-1539,Academic paper,Which model has the highest test F1 score according to Table 4?,"[6534, 6533, 6405, 6285, 6283, 6280, 6080, 5926, 6527, 6538]","[6524, 6534]",1,0.5
+0.5,D19-1539,Academic paper,What loss function achieved the highest average performance according to Table 5?,"[6484, 6361, 6475, 6548, 6478, 6547, 672, 676, 12311, 5926]","[6538, 6527]",Not Found,0.0
+0.5,D19-1539,Academic paper,Are all authors from the same affilation?,"[2769, 221, 4119, 5781, 6434, 7896, 1040, 256, 1674, 17528]",[6471],Not Found,0.0
+0.5,C18-1117,Academic paper,What is one limitation of using Google Ngrams for studying semantic shifts?,"[27, 10, 25, 102, 59, 6315, 181, 6468, 6238, 148]","[25, 15]",3,0.5
+0.5,C18-1117,Academic paper,What is the document title?,"[728, 8119, 11, 114, 7036, 183, 727, 156, 173, 6566]",[0],Not Found,0.0
+0.5,D18-1334,Academic paper,Has the gender-informed NMT system shown consistent improvements over the baseline system?,"[6252, 6298, 6275, 6258, 6276, 6245, 6251, 6274, 6250, 6282]","[6298, 6287]",2,0.5
+0.5,D18-1334,Academic paper,How many more annotated parallel sentences does the language pair EN-DA have compared to the EN-RO pair?,"[6265, 6272, 6281, 186, 6283, 6285, 6282, 6266, 6260, 6286]","[6265, 6251]",1,0.5
+0.5,D18-1360,Academic paper,What is the original figure number associated with the automatically generated knowledge graph?,"[6469, 7908, 6466, 6419, 6526, 6683, 8053, 13025, 14646, 15622]",[6380],Not Found,0.0
+0.5,D18-1360,Academic paper,Which model has the highest F1 score for entity recognition on the Test set?,"[6405, 6534, 6533, 6080, 6375, 161, 6283, 6285, 6525, 6045]",[6406],Not Found,0.0
+0.5,D18-1360,Academic paper,What is the document title?,"[728, 114, 8119, 183, 11, 7036, 727, 5932, 6807, 985]",[6317],Not Found,0.0
+0.5,D18-1003,Academic paper,What method is used by the model to aggregate individual article credibility scores for a single claim?,"[5903, 5900, 5894, 5893, 5895, 5897, 5901, 5899, 5898, 5896]","[5882, 5903]",1,0.5
+0.5,D18-1003,Academic paper,How many figures are there in this paper?,"[15622, 7908, 15615, 6568, 19147, 17426, 12332, 19026, 7906, 11384]","[5952, 5878]",Not Found,0.0
+0.5,D18-1034,Academic paper,Why might the model use both word-level and character-level embeddings as inputs?,"[157, 168, 171, 6043, 6061, 172, 173, 6041, 146, 158]",[6035],Not Found,0.0
+0.5,D18-1034,Academic paper,How many references are there in the paper?,"[194, 6428, 6303, 6562, 80, 5965, 6212, 6100, 6431, 5971]","[6100, 6101, 6102, 6103, 6104, 6105]",8,0.17
+0.5,C18-1182,Academic paper,"According to Figure 3, what is the sequence followed to generate the final labels for Named Entity Recognition?","[6144, 5900, 6125, 168, 5884, 12470, 6477, 6150, 178, 6348]","[168, 157]",4,0.5
+0.5,C18-1182,Academic paper,"According to Figure 1, how is each word in a sentence processed before being input to the LSTM layers?","[178, 6348, 6035, 157, 168, 160, 5878, 173, 146, 6043]","[146, 134]",9,0.5
+0.5,C18-1182,Academic paper,Are the authors of the paper affiliated to the same institution?,"[1328, 1973, 4425, 4467, 4258, 4352, 4441, 4411, 7896, 13416]",[107],Not Found,0.0
+0.5,FBS_S_ES_Public,Government,What are the primary concerns addressed by Bureau Objective 1.3?,"[9454, 8709, 7815, 7721, 3752, 14084, 16104, 9810, 10078, 18404]","[9880, 9879]",Not Found,0.0
+0.5,FBS_S_ES_Public,Government,How does the Bureau plan to mitigate the risk of not seeking diversity?,"[9894, 10078, 9857, 8833, 8639, 9033, 9211, 9565, 10045, 9596]","[9891, 9894]",1,0.5
+0.5,FBS_F_Public-Accessible,Government,What is the main risk associated with Bureau Objective 1.1?,"[9087, 9174, 9889, 9084, 8723, 8870, 8873, 8818, 9896, 9418]","[8818, 8812]",8,0.5
+0.5,FBS_F_Public-Accessible,Government,What is the date when the document was approved for public release?,"[17054, 7791, 8252, 14756, 1320, 15212, 19189, 14653, 15322, 9694]","[8821, 8815]",Not Found,0.0
+0.5,FY-2020-Agency-Financial-Report,Government,Did the Department comply with all FFMIA requirements?,"[7117, 12016, 10599, 10598, 12010, 7116, 10594, 10589, 12015, 12005]","[10593, 10599]",3,0.5
+0.5,FY-2020-Agency-Financial-Report,Government,What type of analysis did the Bureau of the Comptroller and Global Financial Services perform?,"[11912, 7027, 7915, 7920, 12806, 7917, 11417, 7919, 7921, 7916]","[10593, 10599]",Not Found,0.0
+0.5,FY-2020-Agency-Financial-Report,Government,How many sections does the report consist of?,"[10784, 6608, 12212, 15511, 6593, 3418, 7457, 15990, 12022, 5837]","[10104, 10100, 10102]",Not Found,0.0
+0.5,FY-2020-Agency-Financial-Report,Government,What does the appendices include?,"[11484, 6608, 10131, 11385, 6607, 12783, 7894, 11483, 11486, 6583]","[11393, 11386, 11396, 11421]",Not Found,0.0
+0.5,DoS-Geospatial-Data-Strategy_Digital-Version_Accessible-9162021-with-Signature-page_Accessible-9222021,Government,By which department was the report released?,"[732, 11028, 4468, 7124, 7457, 12467, 12022, 7026, 6590, 11430]",[8110],Not Found,0.0
+0.5,International-Narcotics-Control-Strategy-Report-Volume-I-FINAL-1,Government,How much did the seizures of precursor chemicals increase in Kazakhstan from 2019 to the first nine months of 2020?,"[18778, 17945, 18031, 15975, 15956, 17913, 17029, 18035, 17947, 17124]","[18768, 18778]",1,0.5
+0.5,International-Narcotics-Control-Strategy-Report-Volume-I-FINAL-1,Government,What method is used in Mexico for methamphetamine production using substitute chemicals?,"[15980, 18101, 15745, 15777, 15748, 18108, 18975, 17174, 15798, 18150]","[18101, 18093]",2,0.5
+0.5,FBS_EB_29July2022_Public,Government,Is the trade policy described in Bureau Objective 2.3 worker-centered?,"[8698, 19385, 19368, 19577, 19367, 8689, 9433, 9407, 8677, 9425]","[8698, 8695]",1,0.5
+0.5,FBS_IRF_Public,Government,What is the primary method mentioned for containing expenditures in the office?,"[18452, 16379, 14386, 18423, 6440, 6195, 18111, 6468, 6467, 6444]","[9276, 9271]",Not Found,0.0
+0.5,FBS_IRF_Public,Government,What might hinder the U.S.'s ability to achieve strategic prevention of religious freedom violations?,"[9268, 19500, 19527, 19505, 19318, 9260, 10275, 19584, 9328, 8689]","[9268, 9262]",1,0.5
+0.5,FBS_IRF_Public,Government,What specific date was the document approved?,"[6347, 8119, 7113, 7062, 8232, 12475, 471, 12178, 10489, 10586]","[9267, 9261]",Not Found,0.0
+0.5,FBS_OES_28APR2023_PUBLIC,Government,What is the goal that the Bureau Objective 1.1 supports regarding global conservation?,"[9322, 9326, 9323, 19503, 8295, 9635, 9807, 8599, 9495, 9082]","[9562, 9564]",Not Found,0.0
+0.5,FBS_CDP_Public,Government,What is the objective number of the Bureau Cross-Cutting Management Objective discussed in the text?,"[9391, 9678, 9050, 19448, 9049, 9051, 9679, 19452, 9389, 8568]","[8409, 8410, 8411, 8412]",Not Found,0.0
+0.5,FBS_CDP_Public,Government,What is the page range for the 'Bureau Goals and Objectives' section?,"[9515, 19502, 9834, 10020, 9952, 8373, 9927, 19634, 9836, 9964]",[8346],Not Found,0.0
+0.5,FBS_H_23FEB2022_PUBLIC-1,Government,What is the purpose of Bureau Objective 1.2?,"[8604, 9635, 8710, 8605, 9656, 8690, 8703, 9653, 8700, 9636]",[9085],Not Found,0.0
+0.5,FBS_CA_03NOV2023_PUBLIC,Government,What does the CA acronym stand for in the context of the document?,"[8240, 8239, 6400, 8238, 7897, 5954, 6584, 13628, 8114, 8116]",[8264],Not Found,0.0
+0.5,FBS_PM_29NOV2023_Public,Government,When was the document revised?,"[12178, 11785, 9549, 8672, 15457, 11757, 11623, 7171, 6804, 14482]",[9694],Not Found,0.0
+0.5,FBS_PM_29NOV2023_Public,Government,What strategies will the Bureau use to help partners better counter non-state threats?,"[9716, 9698, 9379, 9154, 9371, 8457, 9378, 9309, 8443, 9715]","[9713, 9716]",1,0.5
+0.5,JRS-EAP-Asia_06JAN2023_Public,Government,When was the document approved?,"[8672, 9299, 9549, 9694, 8254, 8255, 1552, 15836, 14607, 9062]",[19470],Not Found,0.0
+0.5,JRS-EAP-Asia_06JAN2023_Public,Government,Which institutions or agencies release the document?,"[12361, 8952, 16855, 9957, 7476, 11270, 1418, 14437, 16327, 19452]",[19456],Not Found,0.0
+0.5,JRS-EAP-Asia_06JAN2023_Public,Government,What are the potential consequences of inaction in addressing climate change mentioned in the document?,"[19515, 19425, 340, 19424, 6962, 19677, 339, 19516, 19426, 19675]","[19513, 19516]",8,0.5
+0.5,Country_Reports_on_Terrorism_2020,Government,Which Lebanese law enforcement organization worked with external forces to enhance their counterterrorism capabilities?,"[1900, 19173, 1938, 4897, 4103, 2451, 3806, 18884, 15695, 16376]","[4348, 4356]",Not Found,0.0
+0.5,FBS_L_27JAN2022_PUBLIC-1,Government,What is the Bureau's strategy for enhancing its employees' skills?,"[8800, 8727, 9412, 7603, 6858, 8434, 9708, 9475, 9078, 11168]","[9456, 9460]",Not Found,0.0
+0.5,FBS_ISN_Public,Government,"How many times does the document mention ""INSSG""?","[8775, 8965, 9298, 8769, 9731, 9732, 8939, 8755, 9291, 8780]","[9288, 9289, 9291, 9292, 9293, 9296, 9298]",3,0.29
+0.5,FBS_ISN_Public,Government,What is the main content of the second-to-last page of the document?,"[16608, 69, 18651, 11897, 7014, 8114, 11498, 6577, 10480, 6710]","[9387, 9388, 9389, 9383]",Not Found,0.0
+0.5,FBS_INL_Public,Government,What is the title of the document?,"[11453, 6577, 10101, 985, 6215, 6566, 3440, 6239, 103, 1029]",[9128],Not Found,0.0
+0.5,DOS-FY2023-Agency-Financial-Report-508,Government,On which page does the report present the chart of U.S. Department of State Organization?,"[11430, 11906, 11920, 7020, 10502, 6588, 6589, 11464, 11484, 6608]","[6667, 6669]",Not Found,0.0
+0.5,FBS_DS_10JAN2022_PUBLICv2,Government,On which page does the report detail the Bureau Objective 4.2?,"[11077, 7718, 6964, 12592, 10482, 12546, 12558, 7931, 12492, 12484]","[8626, 8630]",Not Found,0.0
+0.5,FBS_S_GWI_Public,Government,What is the title of the document?,"[6577, 11453, 10101, 985, 6239, 6215, 103, 13687, 6566, 3440]",[9990],Not Found,0.0
+0.5,FBS_S_GWI_Public,Government,What is the major message conveyed in the last page?,"[11485, 11488, 1167, 6627, 11476, 11486, 11504, 11450, 10147, 12839]","[10082, 10078]",Not Found,0.0
+0.5,FBS_S_GAC_Public,Government,When was the document approved?,"[8672, 9299, 8254, 9694, 9549, 1552, 8255, 15836, 14607, 8252]",[9925],Not Found,0.0
+0.5,FBS_OFM_10JAN2022_PUBLIC,Government,What institution or agency released the report?,"[19345, 16357, 3962, 6634, 16965, 12840, 11530, 16607, 4060, 15388]",[9607],Not Found,0.0
+0.5,FBS_OBO_27APR2023v2_PUBLIC,Government,On which page does the document detail Bureau Objective 2.1?,"[1029, 198, 971, 3039, 195, 102, 196, 19465, 970, 985]",[9508],Not Found,0.0
+0.5,FBS_OBO_27APR2023v2_PUBLIC,Government,How many major sections are listed in the Table of Contents?,"[15762, 5924, 6181, 17421, 10980, 632, 7157, 11708, 10631, 12388]","[9467, 9468]",Not Found,0.0
+0.5,Country_Reports_2021_Complete_MASTER.no_maps-011323-Accessible,Government,Who is the former leader of Jemaah Islamiya that was released from prison in January 2021?,"[2841, 5543, 5548, 5547, 5546, 5545, 5549, 2845, 5542, 5544]","[2841, 2830]",1,0.5
+0.5,FBS_PRM_Public,Government,What is the title of the document?,"[6577, 11453, 10101, 985, 103, 6566, 3440, 6239, 6215, 6563]",[9779],Not Found,0.0
+0.5,FBS_PRM_Public,Government,What is the main content of the last page of the document?,"[7014, 11897, 10168, 10480, 13598, 6207, 6315, 105, 196, 6429]","[9858, 9859, 9861, 9862]",Not Found,0.0
+0.5,JRS-AF_JRS_FINAL_Formatted_Public-Version,Government,When was the document approved?,"[8672, 9299, 8254, 9549, 9694, 8255, 1552, 15836, 8252, 14607]",[19409],Not Found,0.0
+0.5,JRS-AF_JRS_FINAL_Formatted_Public-Version,Government,What section in the Table of Contents details the bureau's strategic planning approach?,"[8113, 8114, 8116, 8975, 9468, 8647, 9056, 8733, 9993, 9782]",[19312],Not Found,0.0
+0.5,JRS-NEA-ME_JRS_FINAL_Formatted_Public-Version-1,Government,How many objectives are under the Bureau Goal 2?,"[8761, 9940, 8300, 8299, 8449, 19510, 9572, 19642, 9171, 19641]","[19616, 19617, 19612]",Not Found,0.0
+0.5,FBS_CT_Public,Government,Is disrupting terrorist financing a focus of the CT's efforts?,"[2016, 4460, 996, 4673, 1418, 4982, 1982, 1628, 1990, 4604]",[8531],Not Found,0.0
+0.5,FBS_CT_Public,Government,"What page of the document outlines the ""Bureau Strategic Framework""?","[8991, 8989, 8745, 8995, 8988, 8994, 8746, 8740, 8993, 9559]",[8488],Not Found,0.0
+0.5,FBS_CSO_Public,Government,How does the Bureau plan to enhance its involvement in peace processes according to the strategic framework?,"[8438, 8460, 8454, 8443, 9189, 19635, 9169, 19317, 9081, 8440]","[8451, 8452, 8454, 8455]",3,0.25
+0.5,FBS_GTM_18FEB2022_PUBLIC,Government,What page does the Bureau Strategic Framework section begin on?,"[8657, 9402, 9618, 8740, 9408, 9405, 9550, 9078, 9623, 19492]",[8986],Not Found,0.0
+0.5,INCSR-Vol-INCSR-Vol.-I-1,Government,What law enforcement unit was created in Benin in January 2018?,"[16145, 4561, 1484, 3914, 1094, 2150, 2109, 1048, 15327, 4237]","[16145, 16138]",1,0.5
+0.5,INCSR-Vol-INCSR-Vol.-2-pdf,Government,What is the mandate of the Financial Services Authority (FSA) in Saint Vincent and the Grenadines?,"[15136, 15142, 15145, 13736, 15135, 15147, 15144, 16448, 15150, 16439]","[15136, 15123]",1,0.5
+0.5,FBS_ECA_10JAN2022_PUBLIC,Government,Is bridging skills gaps in STEM and IT fields a part of ECA's endeavors?,"[8764, 8780, 10032, 7095, 297, 12633, 9450, 296, 11982, 13427]","[8761, 8764]",1,0.5
+0.5,FBS_ECA_10JAN2022_PUBLIC,Government,Does the ECA's strategy include improving media literacy to strengthen independent media?,"[8768, 2611, 8766, 2581, 8762, 2580, 19546, 3676, 19671, 1976]","[8768, 8763]",1,0.5
+0.5,FBS_ECA_10JAN2022_PUBLIC,Government,What specific requirement does the ECA advocate for to counteract potential negative effects of U.S. government exchange programs?,"[19669, 5097, 9903, 2599, 8759, 1502, 8441, 18601, 301, 18855]","[8755, 8759]",5,0.5

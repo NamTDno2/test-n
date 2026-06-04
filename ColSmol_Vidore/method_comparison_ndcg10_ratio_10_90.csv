@@ -1,0 +1,46 @@
+ratio,ndcg@10,method
+10.0,0.050937,Attention Pruning
+20.0,0.083953,Attention Pruning
+30.0,0.120223,Attention Pruning
+40.0,0.153884,Attention Pruning
+50.0,0.181537,Attention Pruning
+60.0,0.203953,Attention Pruning
+70.0,0.221407,Attention Pruning
+80.0,0.236623,Attention Pruning
+90.0,0.252646,Attention Pruning
+10.0,0.083381,Hierarchical
+20.0,0.140574,Hierarchical
+30.0,0.172279,Hierarchical
+40.0,0.190923,Hierarchical
+50.0,0.204564,Hierarchical
+60.0,0.218009,Hierarchical
+70.0,0.232519,Hierarchical
+80.0,0.245362,Hierarchical
+90.0,0.259,Hierarchical
+10.0,0.108832,OURS (best L norm)
+20.0,0.167662,OURS (best L norm)
+30.0,0.18956,OURS (best L norm)
+40.0,0.204346,OURS (best L norm)
+50.0,0.213051,OURS (best L norm)
+60.0,0.21675,OURS (best L norm)
+70.0,0.218807,OURS (best L norm)
+80.0,0.219182,OURS (best L norm)
+90.0,0.223128,OURS (best L norm)
+10.0,0.148808,Random
+20.0,0.200757,Random
+30.0,0.22476,Random
+40.0,0.240622,Random
+50.0,0.251867,Random
+60.0,0.256809,Random
+70.0,0.260227,Random
+80.0,0.265353,Random
+90.0,0.268907,Random
+10.0,0.17948,Spherical KMeans
+20.0,0.221294,Spherical KMeans
+30.0,0.235883,Spherical KMeans
+40.0,0.244336,Spherical KMeans
+50.0,0.252919,Spherical KMeans
+60.0,0.25732,Spherical KMeans
+70.0,0.261827,Spherical KMeans
+80.0,0.266006,Spherical KMeans
+90.0,0.268921,Spherical KMeans

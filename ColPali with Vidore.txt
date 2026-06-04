@@ -1,0 +1,3599 @@
+deps_path = '/kaggle/input/datasets/nhhsag12/colpali-dependency'
+!pip install --no-index --find-links {deps_path} --requirement {deps_path}/requirements.txt
+import os
+import gc
+import glob
+import json
+import pickle
+import time
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn.functional as F
+from tqdm.notebook import tqdm
+
+try:
+    import pytrec_eval
+except Exception:
+    pytrec_eval = None
+
+# ==============================================================================
+# CONFIG — follow MMDocIR template, only data flow switched to ViDoRe
+# ==============================================================================
+
+USE_PREENCODED_INDEX = True
+PREENCODED_INDEX_SOURCE = "/kaggle/input/datasets/namthi/vidore-v3-encoded-colpali/vidore_v3_reencoded_colpali_shards"
+
+# Fallback single-file index (old format)
+FALLBACK_INDEX_PKL_PATH = "/kaggle/input/datasets/namthi/vidore-encoded/colpali13_page_index_vidore_v3_pagelevel.pkl"
+
+INDEX_PKL_PATH = PREENCODED_INDEX_SOURCE if USE_PREENCODED_INDEX else FALLBACK_INDEX_PKL_PATH
+VIDORE_DATASET_ROOT = "/kaggle/input/datasets/namthi/vidore-v3"
+
+# ColPali model path (same template settings)
+COLPALI_BASE   = "/kaggle/input/models/nhhsag12/model-colpali-base/pytorch/default/3"
+COLPALI_LORA   = "/kaggle/input/models/nhhsag12/model-colpali/pytorch/default/2"
+
+WORKING_DIR = "/kaggle/working"
+os.makedirs(WORKING_DIR, exist_ok=True)
+
+# Optional domain filter for ViDoRe query files; [] means all
+DOMAIN_FILTER = []
+
+# Method config (kept from template)
+TOPK_RATIOS        = [round(i * 0.1, 1) for i in range(1, 10)]   # 0.1 … 0.9
+N_LAST_LAYERS_LIST = [4, 8, 16, 32]   # for Ours/Ablation method
+NORMALIZE_MODES    = ['pre', 'post']  # for Ours/Ablation method
+ATTN_N_LAYERS_LIST = [1, 2, 4, 8]     # for Attention Score method
+KMEANS_ITERS       = 10               # for Spherical KMeans method
+N_RANDOM_SEEDS     = 1                # for Random Pruning method (seeds to average)
+
+# Evaluation config (practical guide alignment)
+DEDUP_QUERIES_FOR_EVAL = True
+EVAL_BACKEND = "pytrec_eval"   # options: pytrec_eval, fast_formula
+AUTO_FALLBACK_WHEN_PYTREC_MISSING = True
+
+# Smoke test mode: run all 6 methods on a small sample to verify pipeline health.
+SMOKE_TEST_MODE = False
+SMOKE_TEST_SAMPLE_SIZE = 24
+SMOKE_TEST_SEED = 42
+if SMOKE_TEST_MODE:
+    TOPK_RATIOS = [0.3, 0.6, 0.9]
+    N_LAST_LAYERS_LIST = [4]
+    NORMALIZE_MODES = ['pre']
+    ATTN_N_LAYERS_LIST = [1]
+    KMEANS_ITERS = 5
+
+print("Config loaded.")
+print(f"USE_PREENCODED_INDEX : {USE_PREENCODED_INDEX}")
+print(f"INDEX_PKL_PATH       : {INDEX_PKL_PATH}")
+print(f"VIDORE_DATASET_ROOT  : {VIDORE_DATASET_ROOT}")
+print(f"COLPALI_BASE         : {COLPALI_BASE}")
+print(f"COLPALI_LORA         : {COLPALI_LORA}")
+print(f"TOPK_RATIOS          : {TOPK_RATIOS}")
+print(f"N_LAST_LAYERS_LIST   : {N_LAST_LAYERS_LIST}")
+print(f"NORMALIZE_MODES      : {NORMALIZE_MODES}")
+print(f"ATTN_N_LAYERS_LIST   : {ATTN_N_LAYERS_LIST}")
+print(f"KMEANS_ITERS         : {KMEANS_ITERS}")
+print(f"N_RANDOM_SEEDS       : {N_RANDOM_SEEDS}")
+print(f"SMOKE_TEST_MODE       : {SMOKE_TEST_MODE}")
+print(f"SMOKE_TEST_SAMPLE_SIZE: {SMOKE_TEST_SAMPLE_SIZE}")
+print(f"DEDUP_QUERIES_FOR_EVAL: {DEDUP_QUERIES_FOR_EVAL}")
+print(f"EVAL_BACKEND          : {EVAL_BACKEND}")
+if EVAL_BACKEND == "pytrec_eval" and pytrec_eval is None:
+    if AUTO_FALLBACK_WHEN_PYTREC_MISSING:
+        print("[WARN] pytrec_eval not available. Falling back to fast_formula backend.")
+        EVAL_BACKEND = "fast_formula"
+    else:
+        raise ImportError("pytrec_eval backend requested but package is unavailable.")
+print(f"EVAL_BACKEND(final)   : {EVAL_BACKEND}")
+# Load encoded ViDoRe page embeddings (directory of shards, manifest, or single-file payload)
+# ==============================================================================
+
+
+def _resolve_existing_file(path_like, base_dir=None):
+    s = str(path_like)
+    candidates = []
+
+    if os.path.isabs(s):
+        candidates.append(s)
+    elif base_dir:
+        candidates.append(os.path.join(base_dir, s))
+
+    if base_dir:
+        candidates.append(os.path.join(base_dir, os.path.basename(s)))
+
+    candidates.append(s)
+
+    seen = set()
+    for c in candidates:
+        c_norm = os.path.normpath(c)
+        if c_norm in seen:
+            continue
+        seen.add(c_norm)
+        if os.path.isfile(c_norm):
+            return c_norm
+    return None
+
+
+index_source = INDEX_PKL_PATH
+raw_embeddings = []
+page_keys = []
+meta_records = []
+
+if os.path.isdir(index_source):
+    shard_files = sorted(glob.glob(os.path.join(index_source, "shard_*.pkl")))
+    if not shard_files:
+        raise ValueError(f"No shard_*.pkl files found under: {index_source}")
+
+    print(f"Loading sharded index directly from directory: {index_source}")
+    print(f"Detected shards: {len(shard_files)}")
+
+    for sp in shard_files:
+        with open(sp, "rb") as sf:
+            shard = pickle.load(sf)
+        raw_embeddings.extend(shard.get("fused_index", []))
+        page_keys.extend(shard.get("page_keys", []))
+        meta_records.extend(shard.get("metadata", []))
+
+elif os.path.isfile(index_source):
+    with open(index_source, "rb") as f:
+        payload = pickle.load(f)
+
+    if not isinstance(payload, dict):
+        raise ValueError("Expected dict payload in encoded ViDoRe PKL.")
+
+    # Manifest mode: resolve each shard path with fallback to manifest directory.
+    if payload.get("format") == "vidore_sharded_v1":
+        shard_files = payload.get("shard_files", payload.get("shards", []))
+        if not shard_files:
+            raise ValueError("Sharded payload has no shard_files/shards.")
+
+        manifest_dir = os.path.dirname(index_source)
+        resolved_shards = []
+        for sp in shard_files:
+            resolved = _resolve_existing_file(sp, base_dir=manifest_dir)
+            if resolved is None:
+                raise FileNotFoundError(
+                    f"Shard not found: {sp} (checked relative to {manifest_dir})"
+                )
+            resolved_shards.append(resolved)
+
+        print(f"Loading sharded index from manifest: {index_source}")
+        print(f"Resolved shards: {len(resolved_shards)}")
+
+        for sp in resolved_shards:
+            with open(sp, "rb") as sf:
+                shard = pickle.load(sf)
+            raw_embeddings.extend(shard.get("fused_index", []))
+            page_keys.extend(shard.get("page_keys", []))
+            meta_records.extend(shard.get("metadata", []))
+
+    # Single-shard payload (same schema as shard_00000.pkl)
+    elif any(k in payload for k in ["fused_index", "embeddings"]):
+        raw_embeddings = payload.get("fused_index", payload.get("embeddings", []))
+        page_keys = payload.get("page_keys", [])
+        meta_records = payload.get("metadata", [])
+
+    else:
+        raise ValueError("Unsupported index payload format.")
+
+else:
+    raise FileNotFoundError(f"Index source not found: {index_source}")
+
+if not raw_embeddings:
+    raise ValueError("No embeddings found in index payload.")
+
+meta_df = pd.DataFrame(meta_records) if meta_records else pd.DataFrame()
+
+all_page_embeddings = []
+for emb in raw_embeddings:
+    if isinstance(emb, torch.Tensor):
+        arr = emb.detach().cpu().numpy()
+    else:
+        arr = np.asarray(emb)
+    if arr.ndim != 2:
+        raise ValueError(f"Embedding must be 2D (tokens x dim), got {arr.shape}")
+    # Keep source dtype if float16/float32 to reduce memory pressure.
+    if arr.dtype not in (np.float16, np.float32):
+        arr = arr.astype(np.float32, copy=False)
+    all_page_embeddings.append(arr)
+
+n_pages = len(all_page_embeddings)
+all_page_indices = list(range(n_pages))
+
+if len(meta_df) < n_pages:
+    pad_rows = n_pages - len(meta_df)
+    meta_df = pd.concat([meta_df, pd.DataFrame(index=range(pad_rows))], ignore_index=True)
+meta_df = meta_df.iloc[:n_pages].copy()
+
+if page_keys and len(page_keys) >= n_pages:
+    meta_df["page_key"] = page_keys[:n_pages]
+elif "page_key" not in meta_df.columns:
+    meta_df["page_key"] = [f"page_{i}" for i in range(n_pages)]
+
+if "join_doc_name" not in meta_df.columns:
+    meta_df["join_doc_name"] = "unknown_doc"
+if "safe_page" not in meta_df.columns:
+    meta_df["safe_page"] = np.arange(n_pages, dtype=np.int32)
+if "domain" not in meta_df.columns:
+    meta_df["domain"] = "unknown"
+
+meta_df["embed_idx"] = np.arange(n_pages, dtype=np.int32)
+embedded_rows = meta_df.copy()
+avail_docs = set(embedded_rows["join_doc_name"].astype(str).tolist())
+doc_page_lookup = {doc: grp for doc, grp in embedded_rows.groupby("join_doc_name")}
+
+print(f"Loaded encoded pages: {n_pages}")
+print(f"Embedding shape sample: {all_page_embeddings[0].shape}")
+print(f"Embedding dtype sample: {all_page_embeddings[0].dtype}")
+print(f"Metadata columns: {list(embedded_rows.columns)}")
+print(f"Docs in index: {len(avail_docs)}")
+# ColPali & ColPaliProcessor — defined from scratch (no colpali_engine import)
+# Sources provided by user.
+# ==============================================================================
+
+import importlib
+from abc import ABC, abstractmethod
+from typing import ClassVar, List, Optional, Tuple, Union
+
+import torch
+from torch import nn
+from PIL import Image
+from transformers import (
+    AutoImageProcessor,
+    AutoTokenizer,
+    BatchEncoding,
+    BatchFeature,
+    PaliGemmaProcessor,
+)
+from transformers.models.paligemma.modeling_paligemma import (
+    PaliGemmaConfig,
+    PaliGemmaForConditionalGeneration,
+    PaliGemmaPreTrainedModel,
+)
+
+
+# -- Minimal device helper (replaces colpali_engine.utils.get_torch_device) ----
+def _get_torch_device(device: str = "auto") -> torch.device:
+    if device == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return torch.device(device)
+
+
+# ==============================================================================
+# BaseVisualRetrieverProcessor
+# ==============================================================================
+
+class BaseVisualRetrieverProcessor(ABC):
+    """Base class for visual retriever processors."""
+
+    query_prefix: ClassVar[str] = ""
+
+    @abstractmethod
+    def process_images(self, images: List[Image.Image]) -> Union[BatchFeature, BatchEncoding]:
+        pass
+
+    @abstractmethod
+    def process_texts(self, texts: List[str]) -> Union[BatchFeature, BatchEncoding]:
+        pass
+
+    def process_queries(
+        self,
+        texts: Optional[List[str]] = None,
+        queries: Optional[List[str]] = None,
+        max_length: int = 50,
+        contexts: Optional[List[str]] = None,
+        suffix: Optional[str] = None,
+    ) -> Union[BatchFeature, BatchEncoding]:
+        if texts and queries:
+            raise ValueError("Only one of 'texts' or 'queries' should be provided.")
+        if queries is not None:
+            texts = queries
+        elif texts is None:
+            raise ValueError("No texts or queries provided.")
+
+        if suffix is None:
+            suffix = self.query_augmentation_token * 10
+
+        texts = [self.query_prefix + text + suffix for text in texts]
+        return self.process_texts(texts=texts)
+
+    @abstractmethod
+    def score(
+        self,
+        qs: Union[torch.Tensor, List[torch.Tensor]],
+        ps: Union[torch.Tensor, List[torch.Tensor]],
+        device: Optional[Union[str, torch.device]] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        pass
+
+    @staticmethod
+    def score_single_vector(
+        qs: Union[torch.Tensor, List[torch.Tensor]],
+        ps: Union[torch.Tensor, List[torch.Tensor]],
+        device: Optional[Union[str, torch.device]] = None,
+    ) -> torch.Tensor:
+        device = device or _get_torch_device("auto")
+        if isinstance(qs, list):
+            qs = torch.stack(qs).to(device)
+        else:
+            qs = qs.to(device)
+        if isinstance(ps, list):
+            ps = torch.stack(ps).to(device)
+        else:
+            ps = ps.to(device)
+        scores = torch.einsum("bd,cd->bc", qs, ps).to(torch.float32)
+        return scores
+
+    @staticmethod
+    def score_multi_vector(
+        qs: Union[torch.Tensor, List[torch.Tensor]],
+        ps: Union[torch.Tensor, List[torch.Tensor]],
+        batch_size: int = 128,
+        device: Optional[Union[str, torch.device]] = None,
+    ) -> torch.Tensor:
+        device = device or _get_torch_device("auto")
+        if len(qs) == 0:
+            raise ValueError("No queries provided")
+        if len(ps) == 0:
+            raise ValueError("No passages provided")
+
+        scores_list: List[torch.Tensor] = []
+        for i in range(0, len(qs), batch_size):
+            qs_batch = torch.nn.utils.rnn.pad_sequence(
+                qs[i : i + batch_size], batch_first=True, padding_value=0
+            ).to(device)
+            scores_batch = []
+            for j in range(0, len(ps), batch_size):
+                ps_batch = torch.nn.utils.rnn.pad_sequence(
+                    ps[j : j + batch_size], batch_first=True, padding_value=0
+                ).to(device)
+                scores_batch.append(
+                    torch.einsum("bnd,csd->bcns", qs_batch, ps_batch).max(dim=3)[0].sum(dim=2)
+                )
+            scores_list.append(torch.cat(scores_batch, dim=1).cpu())
+
+        return torch.cat(scores_list, dim=0).to(torch.float32)
+
+    @abstractmethod
+    def get_n_patches(
+        self,
+        image_size: Tuple[int, int],
+        *args,
+        **kwargs,
+    ) -> Tuple[int, int]:
+        pass
+
+
+# ==============================================================================
+# ColPali
+# ==============================================================================
+
+class ColPali(PaliGemmaPreTrainedModel):
+    """
+    ColPali model — "ColPali: Efficient Document Retrieval with Vision Language Models".
+    """
+
+    main_input_name: ClassVar[str] = "doc_input_ids"
+    _keys_to_ignore_on_load_missing = [r"model\.lm_head\.weight"]
+    _checkpoint_conversion_mapping = {
+        "^model.language_model.model": "model.model.language_model",
+        "^model.vision_tower": "model.model.vision_tower",
+        "^model.multi_modal_projector": "model.model.multi_modal_projector",
+        "^model.language_model.lm_head": "model.lm_head",
+        r"^base_model\.model\.custom_text_proj": "custom_text_proj",
+    }
+
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        key_mapping = kwargs.pop("key_mapping", None)
+        if key_mapping is None:
+            key_mapping = cls._checkpoint_conversion_mapping
+        return super().from_pretrained(*args, **kwargs, key_mapping=key_mapping)
+
+    def __init__(self, config: PaliGemmaConfig, mask_non_image_embeddings: bool = False):
+        super().__init__(config=config)
+
+        model = PaliGemmaForConditionalGeneration(config=config)
+        if model.model.language_model._tied_weights_keys is not None:
+            self._tied_weights_keys = [
+                f"model.model.language_model.{k}"
+                for k in model.model.language_model._tied_weights_keys
+            ]
+        self.model = model
+
+        self.dim = 128
+        self.custom_text_proj = nn.Linear(
+            self.model.config.text_config.hidden_size, self.dim
+        )
+        self.mask_non_image_embeddings = mask_non_image_embeddings
+        self.post_init()
+
+    def forward(self, *args, **kwargs) -> torch.Tensor:
+        kwargs.pop("output_hidden_states", None)
+        if "pixel_values" in kwargs:
+            kwargs["pixel_values"] = kwargs["pixel_values"].to(dtype=self.dtype)
+
+        outputs = self.model(*args, output_hidden_states=True, **kwargs)
+        last_hidden_states = outputs.hidden_states[-1]
+        proj = self.custom_text_proj(last_hidden_states)
+        proj = proj / proj.norm(dim=-1, keepdim=True)
+        proj = proj * kwargs["attention_mask"].unsqueeze(-1)
+
+        if "pixel_values" in kwargs and self.mask_non_image_embeddings:
+            image_mask = (kwargs["input_ids"] == self.config.image_token_index).unsqueeze(-1)
+            proj = proj * image_mask
+        return proj
+
+    def get_input_embeddings(self):
+        return self.model.model.language_model.get_input_embeddings()
+
+    def set_input_embeddings(self, value):
+        self.model.model.language_model.set_input_embeddings(value)
+
+    def get_output_embeddings(self):
+        return self.model.model.language_model.get_output_embeddings()
+
+    def set_output_embeddings(self, new_embeddings):
+        self.model.model.language_model.set_output_embeddings(new_embeddings)
+
+    def set_decoder(self, decoder):
+        self.model.model.language_model.set_decoder(decoder)
+
+    def get_decoder(self):
+        return self.model.model.language_model.get_decoder()
+
+    def tie_weights(self, *args, **kwargs):
+        return self.model.model.language_model.tie_weights(*args, **kwargs)
+
+    def resize_token_embeddings(
+        self,
+        new_num_tokens: Optional[int] = None,
+        pad_to_multiple_of=None,
+    ) -> nn.Embedding:
+        model_embeds = self.model.model.language_model.resize_token_embeddings(
+            new_num_tokens, pad_to_multiple_of
+        )
+        self.config.text_config.vocab_size = model_embeds.num_embeddings
+        self.config.vocab_size = model_embeds.num_embeddings
+        self.model.vocab_size = model_embeds.num_embeddings
+        return model_embeds
+
+    @property
+    def patch_size(self) -> int:
+        return self.model.vision_tower.config.patch_size
+
+
+# ==============================================================================
+# ColPaliProcessor
+# ==============================================================================
+
+class ColPaliProcessor(BaseVisualRetrieverProcessor, PaliGemmaProcessor):
+    """Processor for ColPali."""
+
+    visual_prompt_prefix: ClassVar[str] = "<image><bos>Describe the image."
+
+    def __init__(self, image_processor=None, tokenizer=None, chat_template=None, **kwargs):
+        super().__init__(
+            image_processor=image_processor,
+            tokenizer=tokenizer,
+            chat_template=chat_template,
+            **kwargs,
+        )
+
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        try:
+            instance = super().from_pretrained(*args, **kwargs)
+            if (getattr(instance, "image_processor", None) is None
+                    or getattr(instance, "tokenizer", None) is None):
+                raise ValueError("Loaded processor is missing image_processor or tokenizer.")
+            return instance
+        except ValueError as exc:
+            msg = str(exc)
+            if "image_seq_length" not in msg and "missing image_processor" not in msg:
+                raise
+
+        load_kwargs = {
+            key: kwargs[key]
+            for key in ("cache_dir", "force_download", "local_files_only",
+                        "revision", "token", "trust_remote_code")
+            if key in kwargs
+        }
+        image_processor = AutoImageProcessor.from_pretrained(*args, **load_kwargs)
+        tokenizer = AutoTokenizer.from_pretrained(*args, **load_kwargs)
+        return cls(image_processor=image_processor, tokenizer=tokenizer)
+
+    @property
+    def query_augmentation_token(self) -> str:
+        return self.tokenizer.pad_token
+
+    def process_images(self, images: List[Image.Image]) -> Union[BatchFeature, BatchEncoding]:
+        images = [image.convert("RGB") for image in images]
+        return self(
+            text=[self.visual_prompt_prefix] * len(images),
+            images=images,
+            return_tensors="pt",
+            padding="longest",
+        )
+
+    def process_texts(self, texts: List[str]) -> Union[BatchFeature, BatchEncoding]:
+        return self.tokenizer(
+            [self.tokenizer.bos_token + text for text in texts],
+            text_pair=None,
+            return_token_type_ids=True,
+            return_tensors="pt",
+            padding="longest",
+            truncation=True,
+            max_length=512,
+        )
+
+    def score(
+        self,
+        qs: List[torch.Tensor],
+        ps: List[torch.Tensor],
+        device: Optional[Union[str, torch.device]] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        return self.score_multi_vector(qs, ps, device=device, **kwargs)
+
+    def get_n_patches(
+        self,
+        image_size: Tuple[int, int],
+        patch_size: int,
+    ) -> Tuple[int, int]:
+        n_patches_x = self.image_processor.size["width"] // patch_size
+        n_patches_y = self.image_processor.size["height"] // patch_size
+        return n_patches_x, n_patches_y
+
+    def get_image_mask(self, batch_images: BatchFeature) -> torch.Tensor:
+        return batch_images.input_ids == self.image_token_id
+
+
+print("✅ ColPali and ColPaliProcessor class definitions ready.")
+# Load model & processor from local checkpoint
+# ==============================================================================
+from peft import PeftModel
+gc.collect()
+torch.cuda.empty_cache()
+
+# from colpali_engine.models import ColPali, ColPaliProcessor
+
+print(">>> Loading ColPali model...")
+query_model = ColPali.from_pretrained(
+    COLPALI_BASE,
+    torch_dtype=torch.bfloat16,
+    device_map="cuda",
+    attn_implementation="eager",   # required to expose attention weights
+                                    # for Methods 2 & 4; no impact on 1/3/5/6
+)
+
+query_model = PeftModel.from_pretrained(
+    query_model,
+    COLPALI_LORA
+)
+print(">>> Loading ColPaliProcessor...")
+query_processor = ColPaliProcessor.from_pretrained(COLPALI_LORA)
+
+print("✅ ColPali ready")
+print(f"   proj dim : {query_model.dim}")
+# SAFE/FAST PRESET — re-encode control panel
+# Run this cell BEFORE the re-encode cell.
+# ==============================================================================
+
+import shutil
+
+# Choose profile: "fast" (higher throughput) or "safe" (max stability)
+ENCODE_PROFILE = "fast"
+
+if ENCODE_PROFILE == "fast":
+    PERF_CFG = dict(globals().get("PERF_CFG", {}))
+    PERF_CFG.update({
+        "BATCH_SIZE_ENCODE": 8,    # faster than conservative mode
+        "SAVE_EVERY": 0,           # keep disabled to avoid checkpoint spikes
+        "SHARD_SIZE": 1024,        # larger shard reduces disk I/O overhead
+        "PARQUET_BATCH_ROWS": 64,  # faster parquet stream
+        "CLEANUP_EVERY_ROWS": 512, # less frequent cleanup for speed
+        "MAX_ROWS_PER_RUN": 0,     # 0 = full continuous run
+    })
+else:
+    PERF_CFG = dict(globals().get("PERF_CFG", {}))
+    PERF_CFG.update({
+        "BATCH_SIZE_ENCODE": 4,
+        "SAVE_EVERY": 0,
+        "SHARD_SIZE": 256,
+        "PARQUET_BATCH_ROWS": 16,
+        "CLEANUP_EVERY_ROWS": 128,
+        "MAX_ROWS_PER_RUN": 0,
+    })
+
+# Keep bf16 for speed/stability balance
+AUTOCAST_DTYPE = torch.bfloat16
+
+# Prefer stability over max throughput
+if torch.cuda.is_available():
+    torch.backends.cudnn.benchmark = False
+    torch.cuda.empty_cache()
+
+# Set True to start completely fresh from page 0
+RESET_REENCODE_STATE = True
+
+if RESET_REENCODE_STATE:
+    safe_ckpt = os.path.join(WORKING_DIR, "vidore_v3_reencoded_colpali.ckpt.pkl")
+    safe_manifest = os.path.join(WORKING_DIR, "vidore_v3_reencoded_colpali.pkl")
+    safe_shard_dir = os.path.join(WORKING_DIR, "vidore_v3_reencoded_colpali_shards")
+
+    if os.path.isfile(safe_ckpt):
+        try:
+            os.remove(safe_ckpt)
+            print(f">>> Removed checkpoint: {safe_ckpt}")
+        except Exception as e:
+            print(f">>> Could not remove checkpoint: {e}")
+
+    if os.path.isfile(safe_manifest):
+        try:
+            os.remove(safe_manifest)
+            print(f">>> Removed manifest: {safe_manifest}")
+        except Exception as e:
+            print(f">>> Could not remove manifest: {e}")
+
+    if os.path.isdir(safe_shard_dir):
+        try:
+            shutil.rmtree(safe_shard_dir, ignore_errors=True)
+            print(f">>> Removed shard directory: {safe_shard_dir}")
+        except Exception as e:
+            print(f">>> Could not remove shard directory: {e}")
+
+gc.collect()
+
+print(f">>> PRESET loaded (profile={ENCODE_PROFILE})")
+print(f"BATCH_SIZE_ENCODE = {PERF_CFG['BATCH_SIZE_ENCODE']}")
+print(f"SAVE_EVERY        = {PERF_CFG['SAVE_EVERY']} (mid-run checkpoint disabled)")
+print(f"SHARD_SIZE        = {PERF_CFG['SHARD_SIZE']}")
+print(f"PARQUET_BATCH_ROWS= {PERF_CFG['PARQUET_BATCH_ROWS']}")
+print(f"CLEANUP_EVERY_ROWS= {PERF_CFG['CLEANUP_EVERY_ROWS']}")
+print(f"MAX_ROWS_PER_RUN  = {PERF_CFG['MAX_ROWS_PER_RUN']} (0 means continuous full run)")
+print(f"AUTOCAST_DTYPE    = {AUTOCAST_DTYPE}")
+print(f"RESET_REENCODE_STATE = {RESET_REENCODE_STATE}")
+print("Now run the re-encode cell.")
+# Re-encode ViDoRe corpus -> ColPali index (RAM-safe sharded mode, streamed IO)
+# Uses slice-style runs like the reference notebook: process a safe chunk, save, rerun.
+# ==============================================================================
+
+from pathlib import Path
+import io
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+print(">>> Re-encoding ViDoRe corpus with current ColPali model (RAM-safe sharded mode)...")
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# ---- Re-encode config ----
+REENCODE_OUTPUT_PKL = os.path.join(WORKING_DIR, "vidore_v3_reencoded_colpali.pkl")
+REENCODE_CHECKPOINT_PKL = os.path.join(WORKING_DIR, "vidore_v3_reencoded_colpali.ckpt.pkl")
+REENCODE_SHARD_DIR = os.path.join(WORKING_DIR, "vidore_v3_reencoded_colpali_shards")
+REENCODE_DOMAIN_FILTER = DOMAIN_FILTER if DOMAIN_FILTER else []
+
+# Prefer PERF_CFG if available
+_default_bs = int(globals().get("PERF_CFG", {}).get("BATCH_SIZE_ENCODE", 4))
+REENCODE_BATCH_SIZE = int(max(2, _default_bs))
+REENCODE_SAVE_EVERY = int(globals().get("PERF_CFG", {}).get("SAVE_EVERY", 0))
+
+REENCODE_SHARD_SIZE = int(globals().get("PERF_CFG", {}).get("SHARD_SIZE", 256))
+REENCODE_PARQUET_BATCH_ROWS = int(globals().get("PERF_CFG", {}).get("PARQUET_BATCH_ROWS", 16))
+REENCODE_CLEANUP_EVERY_ROWS = int(globals().get("PERF_CFG", {}).get("CLEANUP_EVERY_ROWS", 128))
+
+# Critical: process only a bounded chunk per run; rerun cell to continue.
+REENCODE_MAX_ROWS_PER_RUN = int(globals().get("PERF_CFG", {}).get("MAX_ROWS_PER_RUN", 2200))
+
+REENCODE_MIN_BATCH = 1
+REENCODE_MAX_PAGES = None
+REENCODE_MAX_PAGES_PER_DOMAIN = None
+REENCODE_SHOW_TOTAL = True
+CORPUS_COLUMNS = ["corpus_id", "image", "doc_id", "page_number_in_doc"]
+EMBED_STORAGE_DTYPE = np.float16
+
+REENCODE_SKIP_IF_INDEX_EXISTS = bool(globals().get("USE_PREENCODED_INDEX", False))
+REENCODE_EXISTING_INDEX_SOURCE = str(globals().get("INDEX_PKL_PATH", "")).strip()
+
+def _resolve_existing_file_reencode(path_like, base_dir=None):
+    s = str(path_like)
+    candidates = []
+
+    if os.path.isabs(s):
+        candidates.append(s)
+    elif base_dir:
+        candidates.append(os.path.join(base_dir, s))
+
+    if base_dir:
+        candidates.append(os.path.join(base_dir, os.path.basename(s)))
+
+    candidates.append(s)
+
+    seen = set()
+    for c in candidates:
+        c_norm = os.path.normpath(c)
+        if c_norm in seen:
+            continue
+        seen.add(c_norm)
+        if os.path.isfile(c_norm):
+            return c_norm
+    return None
+
+def _discover_existing_shards_from_source(index_source):
+    if not index_source:
+        return []
+
+    if os.path.isdir(index_source):
+        return sorted(glob.glob(os.path.join(index_source, "shard_*.pkl")))
+
+    if os.path.isfile(index_source):
+        try:
+            with open(index_source, "rb") as f:
+                payload = pickle.load(f)
+            if isinstance(payload, dict) and payload.get("format") == "vidore_sharded_v1":
+                base_dir = os.path.dirname(index_source)
+                shard_files = payload.get("shard_files", payload.get("shards", []))
+                resolved = []
+                for sp in shard_files:
+                    rp = _resolve_existing_file_reencode(sp, base_dir=base_dir)
+                    if rp is not None:
+                        resolved.append(rp)
+                return sorted(set(resolved))
+        except Exception:
+            return []
+
+    return []
+
+PREEXISTING_SHARD_FILES = []
+if REENCODE_SKIP_IF_INDEX_EXISTS:
+    PREEXISTING_SHARD_FILES = _discover_existing_shards_from_source(REENCODE_EXISTING_INDEX_SOURCE)
+
+REENCODE_SKIP_BY_EXISTING_INDEX = len(PREEXISTING_SHARD_FILES) > 0
+
+root = Path(VIDORE_DATASET_ROOT)
+if not root.exists():
+    raise FileNotFoundError(f"ViDoRe dataset root not found: {VIDORE_DATASET_ROOT}")
+os.makedirs(REENCODE_SHARD_DIR, exist_ok=True)
+
+if REENCODE_SKIP_BY_EXISTING_INDEX:
+    print(f">>> Existing encoded shards detected: {len(PREEXISTING_SHARD_FILES)}")
+    print(f">>> Skip re-encode and reuse index from: {REENCODE_EXISTING_INDEX_SOURCE}")
+
+domain_dirs = [p for p in sorted(root.iterdir()) if p.is_dir()]
+if REENCODE_DOMAIN_FILTER:
+    domain_dirs = [p for p in domain_dirs if p.name in set(REENCODE_DOMAIN_FILTER)]
+
+print(f"Domains to encode ({len(domain_dirs)}): {[d.name for d in domain_dirs]}")
+print(
+    f"Batch={REENCODE_BATCH_SIZE} | ShardSize={REENCODE_SHARD_SIZE} | "
+    f"SaveEvery={REENCODE_SAVE_EVERY} | ParquetBatch={REENCODE_PARQUET_BATCH_ROWS} | "
+    f"CleanupEvery={REENCODE_CLEANUP_EVERY_ROWS} | MaxRowsPerRun={REENCODE_MAX_ROWS_PER_RUN}"
+)
+
+if torch.cuda.is_available():
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    torch.backends.cudnn.benchmark = False
+    torch.set_float32_matmul_precision("high")
+
+
+def _norm_int_string(v):
+    if pd.isna(v):
+        return ""
+    s = str(v).strip()
+    if not s:
+        return ""
+    try:
+        f = float(s)
+        if f.is_integer():
+            return str(int(f))
+    except Exception:
+        pass
+    return s
+
+
+def _as_pil_image(v):
+    if isinstance(v, Image.Image):
+        return v.convert("RGB")
+
+    if isinstance(v, dict):
+        if v.get("bytes") is not None:
+            return Image.open(io.BytesIO(v["bytes"])).convert("RGB")
+        if v.get("path"):
+            return Image.open(v["path"]).convert("RGB")
+
+    if isinstance(v, (bytes, bytearray)):
+        return Image.open(io.BytesIO(v)).convert("RGB")
+
+    if isinstance(v, np.ndarray):
+        arr = v
+        if arr.dtype != np.uint8:
+            arr = np.clip(arr, 0, 255).astype(np.uint8)
+        return Image.fromarray(arr).convert("RGB")
+
+    raise ValueError(f"Unsupported image type: {type(v)}")
+
+
+def _arrow_scalar_to_py(arr, idx):
+    try:
+        return arr[idx].as_py()
+    except Exception:
+        return None
+
+
+def _release_arrow_memory():
+    try:
+        pa.default_memory_pool().release_unused()
+    except Exception:
+        pass
+
+
+class _NullCtx:
+    def __enter__(self):
+        return None
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+AUTOCAST_DTYPE = globals().get("AUTOCAST_DTYPE", torch.bfloat16)
+
+all_page_embeddings = []
+page_keys = []
+meta_records = []
+shard_files = list(PREEXISTING_SHARD_FILES)
+next_shard_id = len(shard_files)
+
+total_rows_seen = 0
+total_rows_encoded = 0
+total_rows_failed = 0
+
+batch_images = []
+batch_meta = []
+current_batch_size = REENCODE_BATCH_SIZE
+domain_seen_counter = {}
+cleanup_tick = 0
+
+
+def _make_shard_path(shard_id):
+    return os.path.join(REENCODE_SHARD_DIR, f"shard_{shard_id:05d}.pkl")
+
+
+def _spill_to_shard(force=False):
+    global all_page_embeddings
+    global page_keys
+    global meta_records
+    global shard_files
+    global next_shard_id
+
+    if len(all_page_embeddings) == 0:
+        return
+    if (not force) and len(all_page_embeddings) < REENCODE_SHARD_SIZE:
+        return
+
+    shard_path = _make_shard_path(next_shard_id)
+    shard_payload = {
+        "fused_index": all_page_embeddings,
+        "page_keys": page_keys,
+        "metadata": meta_records,
+    }
+    with open(shard_path, "wb") as sf:
+        pickle.dump(shard_payload, sf, protocol=pickle.HIGHEST_PROTOCOL)
+
+    shard_files.append(shard_path)
+    next_shard_id += 1
+
+    n_saved = len(all_page_embeddings)
+    all_page_embeddings = []
+    page_keys = []
+    meta_records = []
+
+    gc.collect()
+    _release_arrow_memory()
+
+    print(f">>> Shard saved: {os.path.basename(shard_path)} | pages={n_saved} | total_encoded={total_rows_encoded}")
+
+
+def _save_checkpoint():
+    ckpt_payload = {
+        "format": "vidore_sharded_v1",
+        "shard_files": shard_files,
+        "next_shard_id": next_shard_id,
+        "active_fused_index": all_page_embeddings,
+        "active_page_keys": page_keys,
+        "active_metadata": meta_records,
+        "total_rows_seen": total_rows_seen,
+        "total_rows_encoded": total_rows_encoded,
+        "total_rows_failed": total_rows_failed,
+        "current_batch_size": current_batch_size,
+        "domain_seen_counter": domain_seen_counter,
+    }
+    with open(REENCODE_CHECKPOINT_PKL, "wb") as f:
+        pickle.dump(ckpt_payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def _encode_batch(batch_imgs, batch_metas, run_device):
+    if run_device == "cuda":
+        ctx = torch.autocast(device_type="cuda", dtype=AUTOCAST_DTYPE, enabled=True)
+    else:
+        ctx = _NullCtx()
+
+    with ctx:
+        inputs = query_processor.process_images(batch_imgs).to(run_device)
+        if "token_type_ids" not in inputs and "input_ids" in inputs:
+            inputs["token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+
+        proj = query_model(**inputs)
+
+        if hasattr(proj, "last_hidden_state") and proj.last_hidden_state is not None:
+            proj = proj.last_hidden_state
+        elif isinstance(proj, (tuple, list)) and len(proj) > 0:
+            proj = proj[0]
+
+        attn_mask = inputs["attention_mask"]
+        local_embeddings = []
+        for i in range(proj.shape[0]):
+            valid_idx = torch.where(attn_mask[i] > 0)[0]
+            emb = proj[i][valid_idx].detach().cpu().numpy().astype(EMBED_STORAGE_DTYPE, copy=False)
+            local_embeddings.append(emb)
+
+    for emb, meta in zip(local_embeddings, batch_metas):
+        all_page_embeddings.append(emb)
+        page_keys.append(meta["page_key"])
+        meta_records.append(meta)
+
+    del inputs
+    del proj
+    del attn_mask
+    del local_embeddings
+
+
+def _close_images(images):
+    for im in images:
+        try:
+            if hasattr(im, "close"):
+                im.close()
+        except Exception:
+            pass
+
+
+def _flush_batch_oom_safe(force_batch_size=None):
+    global total_rows_encoded
+    global total_rows_failed
+    global current_batch_size
+
+    if not batch_images:
+        return
+
+    run_bs = min(force_batch_size or current_batch_size, len(batch_images))
+
+    while run_bs >= REENCODE_MIN_BATCH:
+        try:
+            with torch.inference_mode():
+                _encode_batch(batch_images[:run_bs], batch_meta[:run_bs], device)
+
+            _close_images(batch_images[:run_bs])
+            del batch_images[:run_bs]
+            del batch_meta[:run_bs]
+            total_rows_encoded += run_bs
+
+            current_batch_size = max(REENCODE_MIN_BATCH, min(current_batch_size, run_bs))
+            _spill_to_shard(force=False)
+            return
+
+        except RuntimeError as e:
+            msg = str(e).lower()
+            is_oom = "out of memory" in msg or "cuda out of memory" in msg
+            if not is_oom:
+                raise
+
+            torch.cuda.empty_cache()
+            run_bs = run_bs // 2
+            current_batch_size = max(REENCODE_MIN_BATCH, run_bs)
+
+    _close_images(batch_images[:1])
+    _ = batch_images.pop(0)
+    _ = batch_meta.pop(0)
+    total_rows_failed += 1
+
+
+def _load_resume_checkpoint_if_any():
+    global all_page_embeddings
+    global page_keys
+    global meta_records
+    global shard_files
+    global next_shard_id
+    global total_rows_seen
+    global total_rows_encoded
+    global total_rows_failed
+    global current_batch_size
+    global domain_seen_counter
+
+    if not os.path.isfile(REENCODE_CHECKPOINT_PKL):
+        return
+
+    try:
+        with open(REENCODE_CHECKPOINT_PKL, "rb") as f:
+            ckpt = pickle.load(f)
+
+        if not isinstance(ckpt, dict):
+            return
+
+        shard_files = ckpt.get("shard_files", [])
+        next_shard_id = int(ckpt.get("next_shard_id", len(shard_files)))
+        all_page_embeddings = ckpt.get("active_fused_index", [])
+        page_keys = ckpt.get("active_page_keys", [])
+        meta_records = ckpt.get("active_metadata", [])
+
+        total_rows_seen = int(ckpt.get("total_rows_seen", 0))
+        total_rows_encoded = int(ckpt.get("total_rows_encoded", 0))
+        total_rows_failed = int(ckpt.get("total_rows_failed", 0))
+        current_batch_size = int(max(REENCODE_MIN_BATCH, ckpt.get("current_batch_size", current_batch_size)))
+        domain_seen_counter = dict(ckpt.get("domain_seen_counter", {}))
+
+        print(
+            f">>> Resumed checkpoint: seen={total_rows_seen}, encoded={total_rows_encoded}, "
+            f"shards={len(shard_files)}, active_buf={len(all_page_embeddings)}"
+        )
+    except Exception as e:
+        print(f">>> Checkpoint load failed, starting fresh: {e}")
+
+
+if not REENCODE_SKIP_BY_EXISTING_INDEX:
+    _load_resume_checkpoint_if_any()
+start_rows_seen_run = int(total_rows_seen)
+run_rows_done = 0
+run_reached_limit = False
+
+corpus_files = []
+for domain_dir in domain_dirs:
+    for fp in sorted(domain_dir.rglob("*.parquet")):
+        pstr = str(fp).replace("\\", "/").lower()
+        if "/corpus/" in pstr:
+            corpus_files.append((domain_dir.name, fp))
+
+if REENCODE_SKIP_BY_EXISTING_INDEX:
+    corpus_files = []
+
+if not corpus_files and not REENCODE_SKIP_BY_EXISTING_INDEX:
+    raise ValueError("No corpus parquet files found under ViDoRe root.")
+
+if REENCODE_SKIP_BY_EXISTING_INDEX:
+    print("Corpus scan skipped because existing encoded shards are being reused.")
+else:
+    print(f"Corpus parquet files found: {len(corpus_files)}")
+
+estimated_total = None
+if REENCODE_SHOW_TOTAL:
+    try:
+        per_domain_count = dict(domain_seen_counter)
+        acc = 0
+        for domain_name, fp in corpus_files:
+            n_rows = int(pq.ParquetFile(str(fp)).metadata.num_rows)
+
+            if REENCODE_MAX_PAGES_PER_DOMAIN is not None:
+                used = int(per_domain_count.get(domain_name, 0))
+                remain = max(0, REENCODE_MAX_PAGES_PER_DOMAIN - used)
+                n_rows = min(n_rows, remain)
+                per_domain_count[domain_name] = used + n_rows
+
+            if REENCODE_MAX_PAGES is not None:
+                remain_all = max(0, REENCODE_MAX_PAGES - acc)
+                if remain_all <= 0:
+                    break
+                n_rows = min(n_rows, remain_all)
+
+            acc += n_rows
+
+            if REENCODE_MAX_PAGES is not None and acc >= REENCODE_MAX_PAGES:
+                break
+
+        estimated_total = acc
+    except Exception:
+        estimated_total = None
+
+if estimated_total is not None:
+    print(f"Estimated corpus pages to encode: {estimated_total}")
+    pbar = tqdm(total=estimated_total, desc="Re-encoding corpus pages")
+    if total_rows_seen > 0:
+        pbar.update(min(total_rows_seen, estimated_total))
+else:
+    print("Estimated corpus pages: unavailable (fallback to open-ended progress bar)")
+    pbar = tqdm(total=None, desc="Re-encoding corpus pages")
+    if total_rows_seen > 0:
+        pbar.update(total_rows_seen)
+
+rows_to_skip = max(0, total_rows_seen)
+stop_all = False
+
+for domain_name, fp in corpus_files:
+    if stop_all:
+        break
+
+    domain_seen = int(domain_seen_counter.get(domain_name, 0))
+    if REENCODE_MAX_PAGES_PER_DOMAIN is not None and domain_seen >= REENCODE_MAX_PAGES_PER_DOMAIN:
+        continue
+
+    try:
+        parquet_file = pq.ParquetFile(str(fp))
+        record_batches = parquet_file.iter_batches(
+            batch_size=REENCODE_PARQUET_BATCH_ROWS,
+            columns=CORPUS_COLUMNS,
+            use_threads=False,
+        )
+    except Exception:
+        continue
+
+    for rb in record_batches:
+        n_rb = rb.num_rows
+        idx_cid = rb.schema.get_field_index("corpus_id")
+        idx_img = rb.schema.get_field_index("image")
+        idx_doc = rb.schema.get_field_index("doc_id")
+        idx_pg = rb.schema.get_field_index("page_number_in_doc")
+
+        col_cid = rb.column(idx_cid) if idx_cid >= 0 else None
+        col_img = rb.column(idx_img) if idx_img >= 0 else None
+        col_doc = rb.column(idx_doc) if idx_doc >= 0 else None
+        col_pg = rb.column(idx_pg) if idx_pg >= 0 else None
+
+        for i in range(n_rb):
+            if rows_to_skip > 0:
+                rows_to_skip -= 1
+                continue
+
+            if REENCODE_MAX_PAGES is not None and total_rows_seen >= REENCODE_MAX_PAGES:
+                stop_all = True
+                break
+
+            if REENCODE_MAX_PAGES_PER_DOMAIN is not None and domain_seen >= REENCODE_MAX_PAGES_PER_DOMAIN:
+                break
+
+            if REENCODE_MAX_ROWS_PER_RUN > 0 and run_rows_done >= REENCODE_MAX_ROWS_PER_RUN:
+                run_reached_limit = True
+                stop_all = True
+                break
+
+            total_rows_seen += 1
+            run_rows_done += 1
+            cleanup_tick += 1
+
+            try:
+                img_raw = _arrow_scalar_to_py(col_img, i) if col_img is not None else None
+                img = _as_pil_image(img_raw)
+                cid = _norm_int_string(_arrow_scalar_to_py(col_cid, i) if col_cid is not None else None)
+
+                doc_raw = _arrow_scalar_to_py(col_doc, i) if col_doc is not None else None
+                doc_id = "" if pd.isna(doc_raw) else str(doc_raw).strip()
+
+                page_num = _arrow_scalar_to_py(col_pg, i) if col_pg is not None else np.nan
+
+                if not cid or not doc_id:
+                    try:
+                        img.close()
+                    except Exception:
+                        pass
+                    total_rows_failed += 1
+                    pbar.update(1)
+                    continue
+
+                try:
+                    safe_page = int(float(page_num)) if pd.notna(page_num) else -1
+                except Exception:
+                    safe_page = -1
+
+                meta = {
+                    "corpus_id": cid,
+                    "doc_id": doc_id,
+                    "join_doc_name": doc_id,
+                    "page_number_in_doc": safe_page,
+                    "safe_page": safe_page,
+                    "domain": domain_name,
+                    "source_parquet": str(fp),
+                }
+
+                page_key = f"{domain_name}/{doc_id}#p{safe_page}#cid{cid}"
+                meta["page_key"] = page_key
+
+                batch_images.append(img)
+                batch_meta.append(meta)
+                domain_seen += 1
+                domain_seen_counter[domain_name] = domain_seen
+
+                if len(batch_images) >= current_batch_size:
+                    _flush_batch_oom_safe()
+
+            except Exception:
+                total_rows_failed += 1
+
+            pbar.update(1)
+
+            if REENCODE_SAVE_EVERY > 0 and total_rows_seen > 0 and (total_rows_seen % REENCODE_SAVE_EVERY == 0):
+                _save_checkpoint()
+
+            if cleanup_tick >= REENCODE_CLEANUP_EVERY_ROWS:
+                cleanup_tick = 0
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                _release_arrow_memory()
+
+        del col_cid, col_img, col_doc, col_pg
+        del rb
+        gc.collect()
+        _release_arrow_memory()
+
+        if stop_all:
+            break
+
+    del parquet_file
+    gc.collect()
+    _release_arrow_memory()
+
+while batch_images:
+    _flush_batch_oom_safe(force_batch_size=len(batch_images))
+
+_spill_to_shard(force=True)
+pbar.close()
+
+# Save checkpoint on every run boundary (important for slice-style continuation).
+_save_checkpoint()
+
+if (not REENCODE_SKIP_BY_EXISTING_INDEX) and len(shard_files) == 0 and len(all_page_embeddings) == 0:
+    raise ValueError("No pages were encoded. Check corpus parquet schema and image decoding.")
+
+# Write/refresh manifest every run so current partial index can be inspected.
+manifest_payload = {
+    "format": "vidore_sharded_v1",
+    "storage_dtype": str(EMBED_STORAGE_DTYPE),
+    "shard_files": shard_files,
+    "num_pages": int(total_rows_encoded),
+}
+
+with open(REENCODE_OUTPUT_PKL, "wb") as f:
+    pickle.dump(manifest_payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+# If full pass finished (did not stop by per-run limit and no global limit left), clear checkpoint.
+is_completed = (not run_reached_limit) and ((REENCODE_MAX_PAGES is None) or (total_rows_seen >= REENCODE_MAX_PAGES) or (rows_to_skip == 0 and not stop_all))
+if is_completed and os.path.isfile(REENCODE_CHECKPOINT_PKL):
+    try:
+        os.remove(REENCODE_CHECKPOINT_PKL)
+    except Exception:
+        pass
+
+print(f"\nRows this run                : {run_rows_done}")
+print(f"Rows seen / encoded / failed : {total_rows_seen} / {total_rows_encoded} / {total_rows_failed}")
+print(f"Batch size (stable)          : {current_batch_size}")
+print(f"Shard files                  : {len(shard_files)}")
+print(f"Saved manifest PKL           : {REENCODE_OUTPUT_PKL}")
+
+INDEX_PKL_PATH = REENCODE_OUTPUT_PKL
+print(f"INDEX_PKL_PATH updated to: {INDEX_PKL_PATH}")
+
+# Build metadata-only in-memory table from existing shards
+meta_list = []
+for sp in shard_files:
+    with open(sp, "rb") as sf:
+        sh = pickle.load(sf)
+    meta_list.extend(sh.get("metadata", []))
+
+meta_df = pd.DataFrame(meta_list)
+meta_df["embed_idx"] = np.arange(len(meta_df), dtype=np.int32)
+embedded_rows = meta_df.copy()
+avail_docs = set(embedded_rows["join_doc_name"].astype(str).tolist())
+doc_page_lookup = {doc: grp for doc, grp in embedded_rows.groupby("join_doc_name")}
+
+print(f"In-memory metadata rows ready: {len(embedded_rows)}")
+print(f"Metadata columns             : {list(embedded_rows.columns)}")
+print(f"Docs in index                : {len(avail_docs)}")
+
+if run_reached_limit:
+    print("\nRun reached MAX_ROWS_PER_RUN safely.")
+    print("Rerun this same cell to continue from checkpoint (no need to reset kernel).")
+else:
+    print("\nRe-encode pass finished for current limits.")
+    print("Next: run Cell 3 (load encoded index) to materialize embeddings when needed.")
+# Cell 3 — FIX: Attention Capture via AttentionCollector + encode_query_live
+# ==============================================================================
+
+from types import SimpleNamespace
+import torch
+
+# Global perf switches (set False for max throughput).
+GLOBAL_MEASURE_LATENCY = False
+ATTN_CAPTURE_LAST_N = None
+
+# --------------------------------------------------------------------------
+# Layer finder — skips vision/encoder stacks, picks the largest text stack.
+# Cached after first scan (same model for all queries).
+# --------------------------------------------------------------------------
+_cached_text_layers_page = None
+
+def _find_text_layers_page(model, force_rescan=False):
+    global _cached_text_layers_page
+    if _cached_text_layers_page is not None and not force_rescan:
+        return _cached_text_layers_page
+
+    candidates = []
+    for name, mod in model.named_modules():
+        if not name.endswith('.layers'):
+            continue
+        if not hasattr(mod, '__len__') or len(mod) == 0:
+            continue
+        is_vision = 'vision' in name.lower() or 'encoder' in name.lower()
+        has_mlp   = hasattr(mod[0], 'mlp') or hasattr(mod[0], 'feed_forward')
+        candidates.append({
+            'name': name, 'module': mod,
+            'n_layers': len(mod), 'is_vision': is_vision, 'has_mlp': has_mlp,
+        })
+
+    text_c = [c for c in candidates if not c['is_vision'] and c['has_mlp']]
+    best   = max(text_c or candidates, key=lambda c: c['n_layers'], default=None)
+
+    if best is None:
+        raise RuntimeError(
+            "Cannot find transformer text layers. Run `print(model)` to inspect structure."
+        )
+    print(f"[AttentionCollector] Using layer stack: '{best['name']}' "
+          f"({best['n_layers']} layers)")
+    _cached_text_layers_page = best['module']
+    return _cached_text_layers_page
+
+
+# --------------------------------------------------------------------------
+# AttentionCollector — registers forward hooks on self_attn of each layer.
+# Captures out[1] (attn_weights) when output_attentions=True flows through.
+# --------------------------------------------------------------------------
+class AttentionCollectorPage:
+    def __init__(self):
+        self.attentions = []
+        self.hooks      = []
+
+    def _find_attn_module(self, layer):
+        for attr in ['self_attn', 'attention', 'attn']:
+            if hasattr(layer, attr):
+                return getattr(layer, attr)
+        return None
+
+    def register_hooks(self, model, layer_indices):
+        """layer_indices: list of ints, negative allowed (e.g. [-4,-3,-2,-1])."""
+        self.clear()
+        self.remove_hooks()
+
+        layers  = _find_text_layers_page(model)
+        n_total = len(layers)
+
+        for idx in layer_indices:
+            idx_abs = idx if idx >= 0 else n_total + idx
+            if not (0 <= idx_abs < n_total):
+                continue
+            attn_mod = self._find_attn_module(layers[idx_abs])
+            if attn_mod is None:
+                continue
+
+            def _hook(module, inp, out):
+                if isinstance(out, tuple) and len(out) >= 2 and out[1] is not None:
+                    self.attentions.append(out[1].detach())
+
+            self.hooks.append(attn_mod.register_forward_hook(_hook))
+
+    def remove_hooks(self):
+        for h in self.hooks:
+            h.remove()
+        self.hooks.clear()
+
+    def clear(self):
+        self.attentions.clear()
+
+
+# --------------------------------------------------------------------------
+# forward_with_attentions_colpali  (FIXED)
+#
+# Key changes vs original:
+#   1. Uses AttentionCollectorPage (robust hook path) as PRIMARY source.
+#   2. output_attentions=True is still injected so inner HF layers fire
+#      their native attention output — this is what makes out[1] non-None
+#      inside each self_attn hook.
+#   3. Never reads outputs.attentions — ColIdefics3.forward() returns a
+#      plain tensor, not ModelOutput, so that field is always absent.
+# --------------------------------------------------------------------------
+def forward_with_attentions_colpali(model, inputs):
+    """
+    Run ColIdefics3 forward pass and capture per-layer attention weights.
+
+    Returns:
+      proj        : (B, S, dim)  — ColPali projected embeddings
+      raw_outputs : SimpleNamespace with .attentions = tuple[(B,H,S,S), ...]
+                    Empty tuple if hooks captured nothing (logged as warning).
+    """
+    collector = AttentionCollectorPage()
+    layers = _find_text_layers_page(model)
+    n_total = len(layers)
+    n_cap = globals().get('ATTN_CAPTURE_LAST_N', None)
+    if n_cap is None or int(n_cap) <= 0 or int(n_cap) >= n_total:
+        hook_idx = list(range(n_total))
+    else:
+        n_cap = int(n_cap)
+        hook_idx = list(range(n_total - n_cap, n_total))
+    collector.register_hooks(model, hook_idx)
+
+    try:
+        with torch.no_grad():
+            kwargs = dict(inputs)
+            kwargs['output_attentions'] = True   # signals inner HF layers to populate out[1]
+            proj = model(**kwargs)               # ColIdefics3.forward → (B, S, dim) tensor
+    finally:
+        collector.remove_hooks()
+
+    attns = tuple(collector.attentions)
+    if len(attns) == 0:
+        print("⚠️  WARNING: AttentionCollector captured 0 attention tensors. "
+              "Importance will fall back to uniform content mask. "
+              "Check that attn_implementation='eager' is set on model load.")
+
+    raw_outputs = SimpleNamespace(attentions=attns if attns else None)
+    collector.clear()
+    return proj, raw_outputs
+
+
+# --------------------------------------------------------------------------
+# encode_query_live  (unchanged interface, uses fixed forward above)
+# --------------------------------------------------------------------------
+def encode_query_live(question: str, processor, model, device: str):
+    """
+    Tokenise `question` with process_queries() and run a forward pass that
+    also captures attention weights.  Used by Methods 2 and 4.
+    Returns (proj, raw_outputs, inputs, encode_ms).
+    """
+    inputs = processor.process_queries([question]).to(device)
+
+    measure_latency = bool(globals().get('GLOBAL_MEASURE_LATENCY', False))
+    if measure_latency and torch.cuda.is_available():
+        torch.cuda.synchronize()
+    t0 = time.perf_counter()
+
+    with torch.no_grad():
+        proj, raw_outputs = forward_with_attentions_colpali(model, inputs)
+
+    if measure_latency and torch.cuda.is_available():
+        torch.cuda.synchronize()
+        encode_ms = (time.perf_counter() - t0) * 1000.0
+    else:
+        encode_ms = 0.0
+
+    return proj, raw_outputs, inputs, encode_ms
+
+print("✅ Fixed attention capture functions loaded.")
+# DEBUG CELL — run this before QA mapping cell (ViDoRe)
+from pathlib import Path
+
+root = Path(VIDORE_DATASET_ROOT)
+if not root.exists():
+    raise FileNotFoundError(f"ViDoRe dataset root not found: {VIDORE_DATASET_ROOT}")
+
+domain_dirs = [p for p in sorted(root.iterdir()) if p.is_dir()]
+if DOMAIN_FILTER:
+    domain_dirs = [p for p in domain_dirs if p.name in set(DOMAIN_FILTER)]
+
+print(f"ViDoRe root: {root}")
+print(f"Domains selected ({len(domain_dirs)}): {[p.name for p in domain_dirs]}")
+print(f"Indexed pages: {len(embedded_rows)}")
+
+if "domain" in embedded_rows.columns:
+    print("\nIndexed pages per domain:")
+    print(embedded_rows.groupby("domain").size().sort_values(ascending=False).head(20))
+
+query_parquets = []
+for d in domain_dirs:
+    for fp in d.rglob("*.parquet"):
+        pstr = str(fp).replace("\\", "/").lower()
+        if "/corpus/" in pstr:
+            continue
+        query_parquets.append(fp)
+
+print(f"\nNon-corpus parquet files found: {len(query_parquets)}")
+for fp in query_parquets[:20]:
+    print(" -", fp)
+
+if query_parquets:
+    sample_df = pd.read_parquet(query_parquets[0])
+    print("\nSample query parquet:", query_parquets[0])
+    print("Columns:", list(sample_df.columns))
+    print(sample_df.head(2).to_string())
+# Cell 8 — Build QA Pairs from ViDoRe (schema-driven, strict)
+# ==============================================================================
+
+from pathlib import Path
+from collections import defaultdict
+
+print("\nBuilding QA pairs from ViDoRe query files (schema-driven)...")
+
+root = Path(VIDORE_DATASET_ROOT)
+if not root.exists():
+    raise FileNotFoundError(f"ViDoRe dataset root not found: {VIDORE_DATASET_ROOT}")
+
+domain_dirs = [p for p in sorted(root.iterdir()) if p.is_dir()]
+if DOMAIN_FILTER:
+    domain_dirs = [p for p in domain_dirs if p.name in set(DOMAIN_FILTER)]
+
+# ------------------------------------------------------------------------------
+# Build strict corpus_id -> embed_idx mapping from encoded index metadata
+# Also build domain-aware mapping to avoid cross-domain corpus_id collisions.
+# ------------------------------------------------------------------------------
+if "corpus_id" not in embedded_rows.columns:
+    raise ValueError(
+        "`corpus_id` column is missing in encoded index metadata. "
+        "ViDoRe qrels are keyed by corpus_id, so this mapping is required. "
+        "Please re-encode index while saving corpus_id in metadata."
+    )
+
+if "domain" not in embedded_rows.columns:
+    embedded_rows = embedded_rows.copy()
+    embedded_rows["domain"] = "unknown"
+
+
+def _norm_key(v):
+    s = "" if pd.isna(v) else str(v).strip()
+    if not s:
+        return ""
+    # Convert numeric-like IDs to canonical int string to align parquet dtypes
+    try:
+        f = float(s)
+        if f.is_integer():
+            return str(int(f))
+    except Exception:
+        pass
+    return s
+
+
+def _norm_domain(v):
+    return "" if pd.isna(v) else str(v).strip().lower()
+
+
+# Global mapping (fallback)
+corpus_id_to_embed = defaultdict(list)
+# Domain-aware mapping (preferred)
+domain_corpus_id_to_embed = defaultdict(list)
+
+for _, r in embedded_rows.iterrows():
+    cid_key = _norm_key(r.get("corpus_id"))
+    if not cid_key:
+        continue
+
+    d_key = _norm_domain(r.get("domain"))
+    eidx = int(r["embed_idx"])
+
+    corpus_id_to_embed[cid_key].append(eidx)
+    domain_corpus_id_to_embed[(d_key, cid_key)].append(eidx)
+
+if not corpus_id_to_embed:
+    raise ValueError("No valid corpus_id found in encoded metadata.")
+
+# Keep deterministic order and no duplicates
+for k in list(corpus_id_to_embed.keys()):
+    corpus_id_to_embed[k] = sorted(set(corpus_id_to_embed[k]))
+for k in list(domain_corpus_id_to_embed.keys()):
+    domain_corpus_id_to_embed[k] = sorted(set(domain_corpus_id_to_embed[k]))
+
+# corpus_id collision diagnostics across domains
+cid_domains = defaultdict(set)
+for (d_key, cid_key), _ in domain_corpus_id_to_embed.items():
+    cid_domains[cid_key].add(d_key)
+collision_cids = [cid for cid, ds in cid_domains.items() if len(ds) > 1]
+
+# ------------------------------------------------------------------------------
+# Build QA pairs from strict queries + qrels tables
+# ------------------------------------------------------------------------------
+qa_pairs = []
+
+scan_files = 0
+used_query_files = 0
+used_qrels_files = 0
+
+queries_total = 0
+qrels_total = 0
+qrels_positive = 0
+qrels_mapped = 0
+
+missing_qid_in_queries = 0
+queries_without_positive_qrels = 0
+queries_with_unmapped_corpus = 0
+
+mapped_with_domain_key = 0
+mapped_with_global_fallback = 0
+
+for domain_dir in domain_dirs:
+    domain_name = domain_dir.name
+    domain_key = _norm_domain(domain_name)
+
+    query_frames = []
+    qrels_frames = []
+
+    for fp in sorted(domain_dir.rglob("*.parquet")):
+        pstr = str(fp).replace("\\", "/").lower()
+        if "/corpus/" in pstr:
+            continue
+
+        scan_files += 1
+        try:
+            df = pd.read_parquet(fp)
+        except Exception:
+            continue
+
+        if df is None or df.empty:
+            continue
+
+        if "/queries/" in pstr:
+            if "query_id" in df.columns and "query" in df.columns:
+                query_frames.append(df)
+                used_query_files += 1
+            continue
+
+        if "/qrels/" in pstr:
+            if "query_id" in df.columns and "corpus_id" in df.columns:
+                qrels_frames.append(df)
+                used_qrels_files += 1
+            continue
+
+    if not query_frames or not qrels_frames:
+        continue
+
+    queries_df = pd.concat(query_frames, ignore_index=True)
+    qrels_df = pd.concat(qrels_frames, ignore_index=True)
+
+    queries_total += len(queries_df)
+    qrels_total += len(qrels_df)
+
+    # Positive relevance only (ViDoRe: 1/2 are relevant)
+    if "score" in qrels_df.columns:
+        qrels_pos = qrels_df[pd.to_numeric(qrels_df["score"], errors="coerce") > 0].copy()
+    else:
+        qrels_pos = qrels_df.copy()
+    qrels_positive += len(qrels_pos)
+
+    # query_id -> list of (corpus_id, relevance_score)
+    qid_to_cids = defaultdict(list)
+    for _, r in qrels_pos.iterrows():
+        qid_key = _norm_key(r.get("query_id"))
+        cid_key = _norm_key(r.get("corpus_id"))
+        rel_raw = r.get("score", 1)
+        try:
+            rel_score = float(rel_raw)
+        except Exception:
+            rel_score = 1.0
+        if qid_key and cid_key:
+            qid_to_cids[qid_key].append((cid_key, rel_score))
+
+    # Build query_id -> GT embed indices (+ graded relevance per embed_idx)
+    qid_to_gt = {}
+    qid_to_gt_relevance = {}
+
+    for qid_key, cid_score_pairs in qid_to_cids.items():
+        gt = set()
+        gt_relevance = {}
+        mapped_any = False
+
+        for cid_key, rel_score in cid_score_pairs:
+            # Prefer exact (domain, corpus_id)
+            dom_pair = (domain_key, cid_key)
+            if dom_pair in domain_corpus_id_to_embed:
+                mapped_any = True
+                mapped_indices = domain_corpus_id_to_embed[dom_pair]
+                gt.update(mapped_indices)
+                for eidx in mapped_indices:
+                    gt_relevance[eidx] = max(float(gt_relevance.get(eidx, 0.0)), float(rel_score))
+                mapped_with_domain_key += 1
+                continue
+
+            # Fallback global corpus_id
+            if cid_key in corpus_id_to_embed:
+                mapped_any = True
+                mapped_indices = corpus_id_to_embed[cid_key]
+                gt.update(mapped_indices)
+                for eidx in mapped_indices:
+                    gt_relevance[eidx] = max(float(gt_relevance.get(eidx, 0.0)), float(rel_score))
+                mapped_with_global_fallback += 1
+
+        if mapped_any and gt:
+            qid_to_gt[qid_key] = sorted(int(x) for x in gt)
+            qid_to_gt_relevance[qid_key] = {int(k): float(v) for k, v in gt_relevance.items() if float(v) > 0}
+            qrels_mapped += 1
+
+    # Build QA rows from queries
+    for _, r in queries_df.iterrows():
+        qid_key = _norm_key(r.get("query_id"))
+        if not qid_key:
+            missing_qid_in_queries += 1
+            continue
+
+        qtext = r.get("query")
+        question = "" if pd.isna(qtext) else str(qtext).strip()
+        if not question:
+            continue
+
+        if qid_key not in qid_to_cids:
+            queries_without_positive_qrels += 1
+            continue
+
+        gt_indices = qid_to_gt.get(qid_key, [])
+        gt_relevance = qid_to_gt_relevance.get(qid_key, {})
+        if not gt_indices:
+            queries_with_unmapped_corpus += 1
+            continue
+
+        # Optional doc name from first mapped page metadata
+        if "join_doc_name" in embedded_rows.columns and len(gt_indices) > 0:
+            doc_name = str(embedded_rows.iloc[int(gt_indices[0])].get("join_doc_name", domain_name))
+        else:
+            doc_name = domain_name
+
+        qa_pairs.append(
+            {
+                "question": question,
+                "gt_embed_indices": gt_indices,
+                "gt_relevance": gt_relevance,
+                "doc_name": doc_name,
+                "domain": domain_name,
+            }
+        )
+
+qa_pairs_before_dedup = len(qa_pairs)
+if DEDUP_QUERIES_FOR_EVAL:
+    deduped = []
+    seen_questions = set()
+    for row in qa_pairs:
+        q_key = str(row.get("question", "")).strip()
+        if not q_key:
+            continue
+        if q_key in seen_questions:
+            continue
+        seen_questions.add(q_key)
+        deduped.append(row)
+    qa_pairs = deduped
+
+# ------------------------------------------------------------------------------
+# Summary diagnostics
+# ------------------------------------------------------------------------------
+print(f"Parquet files scanned            : {scan_files}")
+print(f"Query files used                : {used_query_files}")
+print(f"Qrels files used                : {used_qrels_files}")
+print(f"Queries rows total              : {queries_total}")
+print(f"Qrels rows total                : {qrels_total}")
+print(f"Qrels rows positive             : {qrels_positive}")
+print(f"Qrels query_ids mapped to index : {qrels_mapped}")
+print(f"QA pairs built                  : {len(qa_pairs)}")
+print(f"QA pairs deduplicated removed   : {qa_pairs_before_dedup - len(qa_pairs)}")
+print(f"Queries w/o positive qrels      : {queries_without_positive_qrels}")
+print(f"Queries unmapped corpus_id      : {queries_with_unmapped_corpus}")
+print(f"Queries missing query_id        : {missing_qid_in_queries}")
+
+print(f"Mapped by (domain, corpus_id)   : {mapped_with_domain_key}")
+print(f"Mapped by global fallback       : {mapped_with_global_fallback}")
+print(f"Corpus_id cross-domain collisions: {len(collision_cids)}")
+
+cid_sizes = [len(v) for v in corpus_id_to_embed.values()]
+if cid_sizes:
+    print(f"corpus_id lookup size           : {len(corpus_id_to_embed)}")
+    print(
+        f"corpus_id pages stats           : min={min(cid_sizes)} | "
+        f"p50={int(np.median(cid_sizes))} | max={max(cid_sizes)}"
+    )
+
+if not qa_pairs:
+    raise ValueError(
+        "No QA pairs built from strict query_id/corpus_id mapping. "
+        "This indicates index metadata corpus_id is not aligned with qrels corpus_id."
+    )
+
+if SMOKE_TEST_MODE:
+    n_keep = min(int(SMOKE_TEST_SAMPLE_SIZE), len(qa_pairs))
+    rng = np.random.default_rng(int(SMOKE_TEST_SEED))
+    sel = sorted(rng.choice(len(qa_pairs), size=n_keep, replace=False).tolist())
+    qa_pairs = [qa_pairs[i] for i in sel]
+    print(f"[SMOKE] QA pairs sampled for method checks: {len(qa_pairs)}")
+# ==============================================================================
+# Shared utilities: doc matrix builder, MaxSim, metrics, latency tracker
+# ==============================================================================
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Device: {device}")
+
+
+def build_doc_matrix(embeddings, device):
+    """
+    Convert list of np.ndarray embeddings to a padded (n_docs, max_len, D) tensor.
+    Returns (doc_matrix, doc_mask).
+    """
+    arrays   = [torch.from_numpy(e).float() for e in embeddings]
+    max_len  = max(a.shape[0] for a in arrays)
+    D        = arrays[0].shape[1]
+    n        = len(arrays)
+    mat      = torch.zeros(n, max_len, D, dtype=torch.float32)
+    mask     = torch.zeros(n, max_len, dtype=torch.bool)
+    for i, a in enumerate(arrays):
+        L = a.shape[0]
+        mat[i, :L] = F.normalize(a, dim=-1)
+        mask[i, :L] = True
+    return mat.to(device), mask.to(device)
+
+
+@torch.no_grad()
+def fast_maxsim(q_norm, doc_matrix, doc_mask):
+    """
+    q_norm   : (N_q, D)   — query tokens, L2-normalized
+    doc_matrix: (n_docs, max_len, D)
+    doc_mask : (n_docs, max_len)  bool
+    Returns  : (N_q, n_docs)  per-token MaxSim scores
+    """
+    sim = torch.einsum('qd,nld->qnl', q_norm, doc_matrix)   # (N_q, n_docs, max_len)
+    sim.masked_fill_(~doc_mask.unsqueeze(0), float('-inf'))
+    return sim.max(dim=-1).values                             # (N_q, n_docs)
+
+
+# ---------- Metrics ----------
+
+def _normalize_gt_relevance(gt):
+    # Accept dict[int,float] (graded qrels) or list/set of indices (binary relevance).
+    if isinstance(gt, dict):
+        out = {}
+        for k, v in gt.items():
+            try:
+                kk = int(k)
+                vv = float(v)
+            except Exception:
+                continue
+            if vv > 0:
+                out[kk] = vv
+        return out
+
+    out = {}
+    for x in gt:
+        try:
+            xx = int(x)
+            out[xx] = 1.0
+        except Exception:
+            continue
+    return out
+
+def recall_at_k(ranked, gt, k):
+    gt_rel = _normalize_gt_relevance(gt)
+    if not gt_rel:
+        return 0.0
+    denom = float(len(gt_rel))
+    num = sum(1 for i in ranked[:k] if int(i) in gt_rel)
+    return float(num) / denom if denom > 0 else 0.0
+
+def compute_ndcg(ranked, gt, k):
+    gt_rel = _normalize_gt_relevance(gt)
+    if not gt_rel:
+        return 0.0
+
+    dcg = 0.0
+    for r, i in enumerate(ranked[:k]):
+        gain = float(gt_rel.get(int(i), 0.0))
+        if gain > 0:
+            dcg += gain / np.log2(r + 2)
+
+    ideal_gains = sorted(gt_rel.values(), reverse=True)[:k]
+    idcg = sum(float(g) / np.log2(r + 2) for r, g in enumerate(ideal_gains))
+    return dcg / idcg if idcg > 0 else 0.0
+
+def hit_metrics(top10, gt):
+    gt_rel = _normalize_gt_relevance(gt)
+
+    if EVAL_BACKEND == "pytrec_eval":
+        if pytrec_eval is None:
+            raise ImportError("pytrec_eval backend requested but package is unavailable.")
+
+        qrels = {"q0": {f"d{int(doc_id)}": float(rel) for doc_id, rel in gt_rel.items() if float(rel) > 0}}
+        results = {"q0": {f"d{int(doc_id)}": float(len(top10) - rank) for rank, doc_id in enumerate(top10)}}
+        evaluator = pytrec_eval.RelevanceEvaluator(qrels, {"recall.1,5,10", "ndcg_cut.1,5,10"})
+        s = evaluator.evaluate(results)["q0"]
+        return {
+            'r1':  float(s.get('recall_1', 0.0)),
+            'r5':  float(s.get('recall_5', 0.0)),
+            'r10': float(s.get('recall_10', 0.0)),
+            'n1':  float(s.get('ndcg_cut_1', 0.0)),
+            'n5':  float(s.get('ndcg_cut_5', 0.0)),
+            'n10': float(s.get('ndcg_cut_10', 0.0)),
+        }
+
+    return {
+        'r1':  float(recall_at_k(top10, gt_rel, 1)),
+        'r5':  float(recall_at_k(top10, gt_rel, 5)),
+        'r10': float(recall_at_k(top10, gt_rel, 10)),
+        'n1':  float(compute_ndcg(top10, gt_rel, 1)),
+        'n5':  float(compute_ndcg(top10, gt_rel, 5)),
+        'n10': float(compute_ndcg(top10, gt_rel, 10)),
+    }
+
+def _init_metric():
+    return {'r1': 0, 'r5': 0, 'r10': 0, 'n1': 0.0, 'n5': 0.0, 'n10': 0.0, 'count': 0}
+
+def _add_metric(dst, src):
+    dst['r1']    += float(src['r1'])
+    dst['r5']    += float(src['r5'])
+    dst['r10']   += float(src['r10'])
+    dst['n1']    += float(src['n1'])
+    dst['n5']    += float(src['n5'])
+    dst['n10']   += float(src['n10'])
+    dst['count'] += 1
+
+def _ensure(store, key):
+    if key not in store: store[key] = _init_metric()
+    return store[key]
+
+def record(all_metrics, all_domain_metrics, key, m, domain):
+    _add_metric(_ensure(all_metrics, key), m)
+    if domain not in all_domain_metrics:
+        all_domain_metrics[domain] = {}
+    _add_metric(_ensure(all_domain_metrics[domain], key), m)
+
+
+def print_summary(all_metrics, all_domain_metrics, method_keys, title=""):
+    if title:
+        print(f"\n{'='*60}\n{title}\n{'='*60}")
+    print(f"{'Method':<35} {'R@1':>7} {'R@5':>7} {'R@10':>7} {'nDCG@1':>8} {'nDCG@5':>8} {'nDCG@10':>9}")
+    print("-" * 92)
+    for key in method_keys:
+        if key not in all_metrics: continue
+        m = all_metrics[key]; cnt = m['count'] or 1
+        print(f"{key:<35} {m['r1']/cnt*100:6.2f}%  {m['r5']/cnt*100:6.2f}%  "
+              f"{m['r10']/cnt*100:6.2f}%  {m['n1']/cnt:7.4f}  {m['n5']/cnt:7.4f}  {m['n10']/cnt:8.4f}")
+
+
+# ---------- Latency Tracker ----------
+
+class LatencyTracker:
+    """
+    Tracks per-ratio latency of MaxSim scoring AFTER pooling/pruning.
+
+    Only measures the time for: MaxSim scoring + aggregation + top-k
+    on the already-reduced multi-vector representation.
+    Excludes model forward pass, pooling, and pruning computation.
+
+    Usage:
+        tracker = LatencyTracker("Hierarchical Ward Pool")
+        tracker.add_ratio(ratio, score_ms)   # inside loop, per ratio
+        tracker.report()                     # after loop
+    """
+    def __init__(self, method_name: str):
+        self.name = method_name
+        self.ratio_ms = {}   # ratio -> list[float]  pool+retrieve ms per query
+
+    def add_ratio(self, ratio: float, score_ms: float):
+        """Record scoring latency for a single (ratio, query) observation."""
+        if ratio not in self.ratio_ms:
+            self.ratio_ms[ratio] = []
+        self.ratio_ms[ratio].append(score_ms)
+
+    def report(self):
+        if not self.ratio_ms:
+            print(f"[{self.name}] No latency data collected.")
+            return
+        print(f"\n{'='*70}")
+        print(f"Latency Report — {self.name}  (scoring only, post-pooling/pruning)")
+        print(f"{'='*70}")
+        print(f"  {'Ratio':<10} {'n':>6} {'avg ms':>10} {'p50 ms':>10} {'p95 ms':>10}")
+        print(f"  {'-'*50}")
+        for ratio in sorted(self.ratio_ms.keys()):
+            vals = self.ratio_ms[ratio]
+            n    = len(vals)
+            avg  = np.mean(vals)
+            p50  = np.percentile(vals, 50)
+            p95  = np.percentile(vals, 95)
+            print(f"  {ratio:<10.0%} {n:>6} {avg:>10.2f} {p50:>10.2f} {p95:>10.2f}")
+
+    def to_dict(self):
+        rows = []
+        for ratio in sorted(self.ratio_ms.keys()):
+            vals = self.ratio_ms[ratio]
+            n    = len(vals)
+            rows.append({
+                'method':           self.name,
+                'ratio':            ratio,
+                'n_queries':        n,
+                'avg_score_ms':     round(np.mean(vals), 3) if n else 0,
+                'p50_score_ms':     round(np.percentile(vals, 50), 3) if n else 0,
+                'p95_score_ms':     round(np.percentile(vals, 95), 3) if n else 0,
+            })
+        return rows
+
+
+# ==============================================================================
+# Spherical KMeans (cosine similarity) — Method 5
+# Input : X (N, D) L2-normalized query token vectors
+# Output: centroids (K, D) — mean-pool each cluster then re-normalize
+# ==============================================================================
+
+def spherical_kmeans(X, K, n_iters=KMEANS_ITERS):
+    """
+    Cluster N query token vectors into K representative centroids
+    using cosine distance (spherical KMeans).
+
+    Args:
+        X      : (N, D)  L2-normalized query token vectors
+        K      : int     number of clusters (representative tokens to keep)
+        n_iters: int     number of Lloyd-style iterations
+
+    Returns:
+        centroids: (K, D)  L2-normalized cluster centroids
+    """
+    N, D = X.shape
+    K = min(K, N)
+
+    if K >= N:
+        return X.clone()   # every token is its own representative
+
+    # Initialise: pick K distinct tokens at random
+    perm      = torch.randperm(N, device=X.device)
+    centroids = X[perm[:K]].clone()   # (K, D)
+
+    for _ in range(n_iters):
+        # Assignment: cosine sim = dot product when X is normalised
+        sim         = torch.mm(X, centroids.t())   # (N, K)
+        cluster_ids = sim.argmax(dim=1)             # (N,)
+
+        # TURBO: Vectorized update via scatter_add (no Python loop)
+        new_sums = torch.zeros(K, D, device=X.device, dtype=X.dtype)
+        idx2d    = cluster_ids.unsqueeze(-1).expand(-1, D)
+        new_sums.scatter_add_(0, idx2d, X)
+        counts = torch.zeros(K, device=X.device, dtype=X.dtype)
+        counts.scatter_add_(0, cluster_ids, torch.ones(N, device=X.device, dtype=X.dtype))
+        # Handle empty clusters: keep old centroid
+        empty = counts < 0.5
+        new_sums[empty] = centroids[empty]
+        counts[empty] = 1.0
+        new_centroids = new_sums / counts.unsqueeze(-1)
+        centroids = F.normalize(new_centroids, dim=-1)
+
+    return centroids   # (K, D)
+
+
+# ==============================================================================
+# Random Token Pruning — Method 6
+# Randomly sample round(M * ratio) content tokens; average over N_RANDOM_SEEDS.
+# ==============================================================================
+
+def random_prune_topk(q_norm, content_idx, doc_matrix, doc_mask,
+                      topk_ratios, n_seeds=N_RANDOM_SEEDS, M_full=None, measure_latency=True, **kwargs):
+    """
+    For each ratio r keep k = round(M * r) randomly selected tokens.
+    Scores are averaged over `n_seeds` independent random draws to reduce
+    variance.
+
+    Timing covers the full scoring work per ratio:
+      random sampling + MaxSim + sum  (averaged over n_seeds).
+    This matches how all other methods measure latency.
+
+    Args:
+        q_norm      : (M, D)   content token vectors, L2-normalized
+        content_idx : (M,)     positions of content tokens in the full sequence
+                               (unused here; kept for API symmetry)
+        doc_matrix  : (n_docs, max_len, D)
+        doc_mask    : (n_docs, max_len)  bool
+        topk_ratios : list[float]  fractions of tokens to KEEP
+        n_seeds     : int  number of random samples to average
+
+    Returns:
+        results : dict {ratio: scores (n_docs,)}
+        timing  : dict {ratio: score_ms}   ms for sampling + MaxSim per ratio
+    """
+    M      = q_norm.shape[0]
+    n_docs = doc_matrix.shape[0]
+    device = q_norm.device
+
+    if M == 0:
+        zero = torch.zeros(n_docs, device=device)
+        return {r: zero for r in topk_ratios}, {r: 0.0 for r in topk_ratios}
+
+    if M_full is None:
+        M_full = fast_maxsim(q_norm, doc_matrix, doc_mask)
+
+    results = {}
+    timing  = {}
+
+    for ratio in topk_ratios:
+        k = max(1, round(M * ratio))
+        k = min(k, M)
+
+        # ── Time: random sample + sum over precomputed MaxSim (all scoring work) ────────
+        if measure_latency and torch.cuda.is_available():
+            torch.cuda.synchronize()
+            t0 = time.perf_counter()
+
+        if k == M:
+            # Keep all tokens — no pruning needed; reuse full MaxSim
+            scores = M_full.sum(dim=0)
+        else:
+            accumulated = torch.zeros(n_docs, device=device, dtype=torch.float32)
+            for _ in range(n_seeds):
+                perm        = torch.randperm(M, device=device)[:k]
+                accumulated += M_full[perm].sum(dim=0)
+            scores = accumulated / n_seeds
+
+        if measure_latency and torch.cuda.is_available():
+            torch.cuda.synchronize()
+            timing[ratio] = (time.perf_counter() - t0) * 1000.0
+        else:
+            timing[ratio] = 0.0
+        # ─────────────────────────────────────────────────────────────────
+
+        results[ratio] = scores
+
+    return results, timing
+
+
+print("Utility functions ready.")
+# ==============================================================================
+# Helper: ensure page embeddings are materialized in memory
+# ==============================================================================
+
+def ensure_all_page_embeddings_loaded(index_pkl_path, existing_embeddings=None):
+    """
+    Load page embeddings when `existing_embeddings` is empty.
+    Supports:
+      1) Directory containing shard_*.pkl
+      2) `vidore_sharded_v1` manifest
+      3) Single-file payload with fused_index/embeddings
+    """
+    if existing_embeddings is not None and len(existing_embeddings) > 0:
+        return existing_embeddings
+
+    def _resolve_existing_file(path_like, base_dir=None):
+        s = str(path_like)
+        candidates = []
+
+        if os.path.isabs(s):
+            candidates.append(s)
+        elif base_dir:
+            candidates.append(os.path.join(base_dir, s))
+
+        if base_dir:
+            candidates.append(os.path.join(base_dir, os.path.basename(s)))
+
+        candidates.append(s)
+
+        seen = set()
+        for c in candidates:
+            c_norm = os.path.normpath(c)
+            if c_norm in seen:
+                continue
+            seen.add(c_norm)
+            if os.path.isfile(c_norm):
+                return c_norm
+        return None
+
+    print(f">>> all_page_embeddings is empty. Loading from: {index_pkl_path}")
+
+    raw_embeddings = []
+
+    if os.path.isdir(index_pkl_path):
+        shard_files = sorted(glob.glob(os.path.join(index_pkl_path, "shard_*.pkl")))
+        if not shard_files:
+            raise ValueError(f"No shard_*.pkl files found under: {index_pkl_path}")
+
+        print(f">>> Loading embeddings from shard directory ({len(shard_files)} shards)...")
+        for sp in shard_files:
+            with open(sp, "rb") as sf:
+                shard = pickle.load(sf)
+            raw_embeddings.extend(shard.get("fused_index", []))
+
+    elif os.path.isfile(index_pkl_path):
+        with open(index_pkl_path, "rb") as f:
+            payload = pickle.load(f)
+
+        if isinstance(payload, dict) and payload.get("format") == "vidore_sharded_v1":
+            shard_files = payload.get("shard_files", [])
+            if not shard_files:
+                raise ValueError("Sharded payload has no shard_files.")
+
+            base_dir = os.path.dirname(index_pkl_path)
+            resolved_shards = []
+            for sp in shard_files:
+                resolved = _resolve_existing_file(sp, base_dir=base_dir)
+                if resolved is None:
+                    raise FileNotFoundError(
+                        f"Shard not found: {sp} (checked relative to {base_dir})"
+                    )
+                resolved_shards.append(resolved)
+
+            print(f">>> Loading embeddings from manifest ({len(resolved_shards)} shards)...")
+            for sp in resolved_shards:
+                with open(sp, "rb") as sf:
+                    shard = pickle.load(sf)
+                raw_embeddings.extend(shard.get("fused_index", []))
+
+        elif isinstance(payload, dict):
+            raw_embeddings = payload.get("fused_index", payload.get("embeddings", []))
+        else:
+            raise ValueError("Unexpected index payload format. Expected a dict.")
+
+    else:
+        raise FileNotFoundError(f"Index source not found: {index_pkl_path}")
+
+    if not raw_embeddings:
+        raise ValueError("No embeddings found in index payload.")
+
+    loaded_embeddings = []
+    for emb in raw_embeddings:
+        if isinstance(emb, torch.Tensor):
+            arr = emb.detach().cpu().numpy()
+        else:
+            arr = np.asarray(emb)
+
+        if arr.ndim != 2:
+            raise ValueError(f"Embedding must be 2D (tokens x dim), got {arr.shape}")
+        if arr.dtype not in (np.float16, np.float32):
+            arr = arr.astype(np.float32, copy=False)
+
+        loaded_embeddings.append(arr)
+
+    print(f">>> Loaded {len(loaded_embeddings)} page embeddings into memory.")
+    return loaded_embeddings
+
+print("Embedding loader helper is ready.")
+# ==============================================================================
+# PRE-FLIGHT SMOKE TEST — quick health-check for all 6 methods
+# Runs on a tiny query sample before full benchmark execution.
+# ==============================================================================
+
+RUN_METHOD_SMOKE_PREFLIGHT = False
+METHOD_SMOKE_N_QUERIES = 3
+METHOD_SMOKE_SEED = 123
+
+if RUN_METHOD_SMOKE_PREFLIGHT:
+    print(">>> PRE-FLIGHT SMOKE TEST (Methods 1-6)")
+
+    all_page_embeddings = ensure_all_page_embeddings_loaded(
+        INDEX_PKL_PATH,
+        globals().get("all_page_embeddings", None),
+    )
+    doc_matrix, doc_mask = build_doc_matrix(all_page_embeddings, device)
+    n_docs = doc_matrix.shape[0]
+
+    if len(qa_pairs) == 0:
+        raise ValueError("qa_pairs is empty; cannot run smoke test.")
+
+    rng = np.random.default_rng(int(METHOD_SMOKE_SEED))
+    n_smoke = min(int(METHOD_SMOKE_N_QUERIES), len(qa_pairs))
+    sel = sorted(rng.choice(len(qa_pairs), size=n_smoke, replace=False).tolist())
+    smoke_pairs = [qa_pairs[i] for i in sel]
+
+    smoke_status = {k: "PASS" for k in ["M1", "M2", "M3", "M4", "M5", "M6"]}
+    smoke_errors = []
+
+    # Local safe config to avoid NameError when some config/helper cells were not run yet.
+    _topk_ratios = globals().get('TOPK_RATIOS', [0.5])
+    if not isinstance(_topk_ratios, (list, tuple)) or len(_topk_ratios) == 0:
+        _topk_ratios = [0.5]
+    _topk_ratio0 = float(_topk_ratios[0])
+
+    _normalize_modes = globals().get('NORMALIZE_MODES', ['pre'])
+    if not isinstance(_normalize_modes, (list, tuple)) or len(_normalize_modes) == 0:
+        _normalize_modes = ['pre']
+    _normalize_mode0 = str(_normalize_modes[0])
+
+    _n_last_layers_list = globals().get('N_LAST_LAYERS_LIST', [1])
+    if not isinstance(_n_last_layers_list, (list, tuple)) or len(_n_last_layers_list) == 0:
+        _n_last_layers_list = [1]
+    _n_last_layers0 = int(_n_last_layers_list[0])
+
+    _svd_rank_remove = int(globals().get('SVD_RANK_REMOVE', 1))
+    _n_random_seeds = int(globals().get('N_RANDOM_SEEDS', 1))
+    _kmeans_iters = int(globals().get('KMEANS_ITERS', 5))
+
+    def _prep_query(question):
+        q_inputs = query_processor.process_queries([question]).to(device)
+        if 'token_type_ids' not in q_inputs and 'input_ids' in q_inputs:
+            q_inputs['token_type_ids'] = torch.zeros_like(q_inputs['input_ids'])
+
+        with torch.no_grad():
+            q_proj = query_model(**q_inputs)
+
+        if hasattr(q_proj, "last_hidden_state") and q_proj.last_hidden_state is not None:
+            q_proj = q_proj.last_hidden_state
+        elif isinstance(q_proj, (tuple, list)) and len(q_proj) > 0:
+            q_proj = q_proj[0]
+
+        attn_mask = q_inputs['attention_mask'][0]
+        trad_idx = torch.where(attn_mask > 0)[0]
+        q_emb = q_proj[0][trad_idx].float()
+        q_norm = F.normalize(q_emb, dim=-1)
+        return q_inputs, q_norm
+
+    def _content_mask_for_preflight(q_inputs):
+        if 'build_content_mask_qwen' in globals() and callable(globals()['build_content_mask_qwen']):
+            return globals()['build_content_mask_qwen'](q_inputs, query_processor)[0].float()
+        # Fallback when helper cell is not executed yet: use attention mask only.
+        return q_inputs['attention_mask'][0].float()
+
+    def _svd_importance_for_preflight(attn_list, content_mask_1d, layer_weights, svd_rank_remove):
+        fn = globals().get('compute_svd_importance_softplus', None)
+        if callable(fn):
+            return fn(attn_list, content_mask_1d.unsqueeze(0), layer_weights, svd_rank_remove)[0]
+        # Fallback when SVD helper cell is not executed yet: use masked mean attention.
+        seq_len = int(content_mask_1d.shape[0])
+        imp = torch.zeros(seq_len, device=content_mask_1d.device, dtype=torch.float32)
+        n_layers = max(1, len(attn_list))
+        for i, attn_layer in enumerate(attn_list):
+            w = float(layer_weights[i]) if i < len(layer_weights) else (1.0 / n_layers)
+            a = attn_layer.float().mean(dim=1)  # [B, S, S]
+            a = a[0].mean(dim=0)                 # [S] attention received
+            imp += (w * a)
+        imp = F.softplus(imp)
+        imp = imp * content_mask_1d.float()
+        return imp
+
+    def _cluster_pool_for_preflight(q_kept, q_disc, imp_kept, imp_disc, normalize_mode):
+        fn = globals().get('build_cluster_pool_vectors_ours', None)
+        if callable(fn):
+            return fn(q_kept, q_disc, imp_kept, imp_disc, normalize_mode=normalize_mode)
+        # Fallback when pooling helper is not executed yet: skip pooling in smoke path.
+        pooled_vecs = q_kept.new_zeros((0, q_kept.shape[1]))
+        pooled_weights = q_kept.new_zeros((0,))
+        return pooled_vecs, pooled_weights
+
+    for item in smoke_pairs:
+        question = item['question']
+
+        # Shared prep
+        q_inputs, q_norm = _prep_query(question)
+        M_full = fast_maxsim(q_norm, doc_matrix, doc_mask)
+
+        # Method 1: Traditional
+        try:
+            _ = torch.topk(M_full.sum(dim=0), min(10, n_docs)).indices.cpu().tolist()
+        except Exception as ex:
+            smoke_status["M1"] = "FAIL"
+            smoke_errors.append(f"M1: {ex}")
+
+        # Method 2: Ours (SVD + Cluster Pool)
+        try:
+            proj, raw_outputs, q_inputs2, _ = encode_query_live(question, query_processor, query_model, device)
+            attn_mask_1d = q_inputs2['attention_mask'][0].float()
+            content_mask_1d = _content_mask_for_preflight(q_inputs2)
+
+            method_idx = torch.where(content_mask_1d > 0)[0]
+            if method_idx.numel() == 0:
+                method_idx = torch.where(attn_mask_1d > 0)[0]
+
+            n_layers = _n_last_layers0 if _n_last_layers0 > 0 else 1
+            if raw_outputs.attentions is not None and len(raw_outputs.attentions) > 0:
+                attn_list = list(raw_outputs.attentions[-n_layers:])
+                n_actual = len(attn_list)
+                layer_weights = torch.exp(torch.linspace(0, 1, max(n_actual, 1), device=device))
+                layer_weights /= layer_weights.sum()
+                importance = _svd_importance_for_preflight(
+                    attn_list, content_mask_1d, layer_weights, _svd_rank_remove
+                )
+            else:
+                importance = content_mask_1d.clone()
+
+            q_method = F.normalize(proj[0][method_idx].float(), dim=-1)
+            imp_valid = importance[method_idx].float()
+            ratio = _topk_ratio0
+            n_keep = max(1, int(q_method.shape[0] * ratio))
+            order = torch.argsort(imp_valid, descending=True)
+            kept_idx = order[:n_keep]
+            disc_idx = order[n_keep:]
+
+            q_kept = q_method[kept_idx]
+            q_disc = q_method[disc_idx]
+            imp_kept = imp_valid[kept_idx]
+            imp_disc = imp_valid[disc_idx]
+            mode = _normalize_mode0
+            pooled_vecs, pooled_weights = _cluster_pool_for_preflight(
+                q_kept, q_disc, imp_kept, imp_disc, normalize_mode=mode
+            )
+            all_q = torch.cat([q_kept, pooled_vecs], dim=0) if pooled_vecs.shape[0] > 0 else q_kept
+            _ = torch.topk(fast_maxsim(all_q, doc_matrix, doc_mask).sum(dim=0), min(10, n_docs)).indices.cpu().tolist()
+        except Exception as ex:
+            smoke_status["M2"] = "FAIL"
+            smoke_errors.append(f"M2: {ex}")
+
+        # Method 3: Hierarchical (scipy ward dependency check + quick cluster op)
+        try:
+            from scipy.cluster.hierarchy import ward as scipy_ward, fcluster
+            from scipy.spatial.distance import pdist
+            q_np = q_norm.detach().cpu().float().numpy()
+            if q_np.shape[0] > 1:
+                dists = pdist(q_np, metric='cosine')
+                Z = scipy_ward(np.clip(dists, 0, 2))
+                _ = fcluster(Z, t=max(1, min(2, q_np.shape[0])), criterion='maxclust')
+            _ = torch.topk(M_full.sum(dim=0), min(10, n_docs)).indices.cpu().tolist()
+        except Exception as ex:
+            smoke_status["M3"] = "FAIL"
+            smoke_errors.append(f"M3: {ex}")
+
+        # Method 4: Attention score pruning
+        try:
+            proj4, raw4, q_inputs4, _ = encode_query_live(question, query_processor, query_model, device)
+            attn_mask4 = q_inputs4['attention_mask'][0].float()
+            trad_idx4 = torch.where(attn_mask4 > 0)[0]
+            q_norm4 = F.normalize(proj4[0][trad_idx4].float(), dim=-1)
+            M_full4 = fast_maxsim(q_norm4, doc_matrix, doc_mask)
+
+            if raw4.attentions is not None and len(raw4.attentions) > 0:
+                attn_subset = list(raw4.attentions[-1:])
+                imp_2d = torch.zeros(1, q_inputs4['attention_mask'].shape[1], device=device)
+                for attn_layer in attn_subset:
+                    imp_2d += attn_layer.float().sum(dim=2).mean(dim=1)
+                imp = imp_2d[0][trad_idx4]
+            else:
+                imp = torch.ones(trad_idx4.numel(), device=device)
+
+            n_keep = max(1, int(trad_idx4.numel() * _topk_ratio0))
+            kept_idx = torch.argsort(imp, descending=True)[:n_keep]
+            _ = torch.topk(M_full4[kept_idx].sum(dim=0), min(10, n_docs)).indices.cpu().tolist()
+        except Exception as ex:
+            smoke_status["M4"] = "FAIL"
+            smoke_errors.append(f"M4: {ex}")
+
+        # Method 5: Spherical KMeans
+        try:
+            ratio5 = _topk_ratio0
+            K = max(1, int(q_norm.shape[0] * ratio5))
+            cents = spherical_kmeans(q_norm, K, n_iters=max(2, _kmeans_iters))
+            _ = torch.topk(fast_maxsim(cents, doc_matrix, doc_mask).sum(dim=0), min(10, n_docs)).indices.cpu().tolist()
+        except Exception as ex:
+            smoke_status["M5"] = "FAIL"
+            smoke_errors.append(f"M5: {ex}")
+
+        # Method 6: Random pruning
+        try:
+            try:
+                ratio_scores, _ = random_prune_topk(
+                    q_norm=q_norm,
+                    content_idx=torch.arange(q_norm.shape[0], device=q_norm.device),
+                    doc_matrix=doc_matrix,
+                    doc_mask=doc_mask,
+                    topk_ratios=_topk_ratios,
+                    n_seeds=max(1, _n_random_seeds),
+                    M_full=M_full,
+                    measure_latency=False,
+                )
+            except TypeError:
+                # Backward compatibility with old helper signature without M_full.
+                ratio_scores, _ = random_prune_topk(
+                    q_norm=q_norm,
+                    content_idx=torch.arange(q_norm.shape[0], device=q_norm.device),
+                    doc_matrix=doc_matrix,
+                    doc_mask=doc_mask,
+                    topk_ratios=_topk_ratios,
+                    n_seeds=max(1, _n_random_seeds),
+                    measure_latency=False,
+                )
+            _ = torch.topk(ratio_scores[_topk_ratio0], min(10, n_docs)).indices.cpu().tolist()
+        except Exception as ex:
+            smoke_status["M6"] = "FAIL"
+            smoke_errors.append(f"M6: {ex}")
+
+    print("\n[SMOKE RESULT]")
+    for mk in ["M1", "M2", "M3", "M4", "M5", "M6"]:
+        print(f"  {mk}: {smoke_status[mk]}")
+
+    if smoke_errors:
+        print("\n[SMOKE ERRORS]")
+        for msg in smoke_errors:
+            print(" -", msg)
+        raise RuntimeError("Smoke preflight failed for one or more methods. Check logs above.")
+    else:
+        print("\nAll 6 methods passed smoke preflight. Safe to run full benchmark cells.")
+else:
+    print(">>> PRE-FLIGHT SMOKE TEST is disabled.")
+# ==============================================================================
+# METHOD 1 — Traditional MaxSim
+# Queries encoded live with ColPali (plain forward, no attention capture).
+# ==============================================================================
+
+print(">>> METHOD 1: Traditional MaxSim")
+
+trad_metrics        = {}
+trad_domain_metrics = {}
+trad_query_rows     = []
+trad_latency        = LatencyTracker("Traditional MaxSim")
+
+METHOD_KEYS_TRAD = ['traditional']
+
+# Ensure embeddings are available in RAM before building doc matrix.
+all_page_embeddings = ensure_all_page_embeddings_loaded(
+    INDEX_PKL_PATH,
+    globals().get("all_page_embeddings", None),
+)
+
+# Build full doc matrix from all page embeddings
+print(f"Building doc matrix from {len(all_page_embeddings)} page embeddings...")
+doc_matrix, doc_mask = build_doc_matrix(all_page_embeddings, device)
+n_docs = doc_matrix.shape[0]
+print(f"Doc matrix shape: {doc_matrix.shape}")
+
+pbar = tqdm(enumerate(qa_pairs), total=len(qa_pairs), desc="Traditional MaxSim")
+
+for q_idx, item in pbar:
+    question = item['question']
+    gt_set   = item.get('gt_relevance', item['gt_embed_indices'])
+    domain   = item['domain']
+
+    # Encode query live
+    q_inputs = query_processor.process_queries([question]).to(device)
+    if 'token_type_ids' not in q_inputs and 'input_ids' in q_inputs:
+        q_inputs['token_type_ids'] = torch.zeros_like(q_inputs['input_ids'])
+
+    with torch.no_grad():
+        q_proj = query_model(**q_inputs)
+
+    if hasattr(q_proj, "last_hidden_state") and q_proj.last_hidden_state is not None:
+        q_proj = q_proj.last_hidden_state
+    elif isinstance(q_proj, (tuple, list)) and len(q_proj) > 0:
+        q_proj = q_proj[0]
+
+    attn_mask = q_inputs['attention_mask'][0]
+    trad_idx  = torch.where(attn_mask > 0)[0]
+    q_emb     = q_proj[0][trad_idx].float()
+    q_norm    = F.normalize(q_emb, dim=-1)
+
+    # Retrieval (timed — 100% baseline)
+    torch.cuda.synchronize()
+    t_score_start = time.perf_counter()
+
+    M      = fast_maxsim(q_norm, doc_matrix, doc_mask)
+    scores = M.sum(dim=0)
+    top10  = torch.topk(scores, min(10, n_docs)).indices.cpu().tolist()
+
+    torch.cuda.synchronize()
+    score_ms = (time.perf_counter() - t_score_start) * 1000.0
+    trad_latency.add_ratio(1.0, score_ms)
+
+    m = hit_metrics(top10, gt_set)
+    record(trad_metrics, trad_domain_metrics, 'traditional', m, domain)
+
+    trad_query_rows.append({
+        'query_id':       q_idx,
+        'doc_name':       item['doc_name'],
+        'domain':         domain,
+        'question':       question,
+        'trad_r@1':       m['r1'],
+        'trad_r@5':       m['r5'],
+        'trad_r@10':      m['r10'],
+        'trad_ndcg@1':    round(m['n1'],  4),
+        'trad_ndcg@5':    round(m['n5'],  4),
+        'trad_ndcg@10':   round(m['n10'], 4),
+    })
+
+print_summary(trad_metrics, trad_domain_metrics, METHOD_KEYS_TRAD,
+              title="Traditional MaxSim Results")
+trad_latency.report()
+
+pd.DataFrame(trad_query_rows).to_csv(
+    os.path.join(WORKING_DIR, "traditional_queries.csv"), index=False)
+print("\n✅ Saved: traditional_queries.csv")
+# ==============================================================================
+# Cell 7a — FIX: SVD helpers + build_cluster_pool_scores
+# ==============================================================================
+
+SVD_RANK_REMOVE  = 1
+TEMPERATURE_OURS = 0.5
+
+
+def remove_sink_components_batch(attn_heads, k):
+    """SVD sink removal, batched over (B*H, Sq, Sk)."""
+    try:
+        U, S, Vh = torch.linalg.svd(attn_heads, full_matrices=False)
+        k = min(k, S.shape[-1])
+        sink = (U[..., :k] * S[:, :k].unsqueeze(1)) @ Vh[:, :k, :]
+        return (attn_heads - sink).clamp(min=0.0)
+    except Exception:
+        return attn_heads
+
+
+def compute_svd_importance_softplus(attentions, content_mask, layer_weights, k):
+    """
+    attentions   : list of (B, H, Sq, Sk) tensors — one per layer
+    content_mask : (B, S) float tensor
+    layer_weights: (n_layers,) tensor, exponentially increasing
+    Returns      : (B, S) importance tensor
+    """
+    device_    = content_mask.device
+    B, S       = content_mask.shape
+    importance = torch.zeros(B, S, device=device_)
+
+    for i, attn in enumerate(attentions):
+        attn      = attn.float().to(device_)
+        B_, H, Sq, Sk = attn.shape
+        attn_flat = attn.view(B_ * H, Sq, Sk)
+        cleaned   = remove_sink_components_batch(attn_flat, k)
+        cleaned   = cleaned.view(B_, H, Sq, Sk)
+
+        layer_imp = cleaned.sum(dim=2).mean(dim=1)           # (B, S)
+        layer_imp = layer_imp * content_mask
+        layer_imp = layer_imp / layer_imp.max(dim=-1, keepdim=True).values.clamp(min=1e-8)
+        importance += layer_weights[i] * layer_imp
+
+    importance = importance * content_mask
+    importance = F.softplus(importance / TEMPERATURE_OURS)
+    importance = importance * content_mask
+    return importance
+
+
+def build_content_mask_qwen(inputs, processor):
+    """Mask out padding and special tokens from the attention mask."""
+    attn_mask = inputs["attention_mask"]
+    input_ids = inputs.get("input_ids", None)
+    if input_ids is None:
+        return attn_mask.float()
+
+    tok = getattr(processor, 'tokenizer', processor)
+    special_ids = set()
+    for attr in ['pad_token_id', 'bos_token_id', 'eos_token_id',
+                 'unk_token_id', 'sep_token_id', 'cls_token_id']:
+        tid = getattr(tok, attr, None)
+        if tid is not None:
+            special_ids.add(int(tid))
+    if hasattr(tok, 'added_tokens_encoder'):
+        for _, tid in tok.added_tokens_encoder.items():
+            special_ids.add(int(tid))
+    if not special_ids:
+        return attn_mask.float()
+
+    special_tensor = torch.tensor(list(special_ids), device=input_ids.device)
+    is_special     = (input_ids.unsqueeze(-1) == special_tensor).any(dim=-1)
+    return attn_mask.float() * (~is_special).float()
+
+
+# ------------------------------------------------------------------------------
+# FIX: build_cluster_pool_scores
+#
+# Replaces build_cluster_pool_vectors_ours.
+# Instead of returning (pooled_vecs, pooled_weights) that callers re-concat
+# and re-run MaxSim on — causing a second MaxSim call and a double pool_frac
+# multiply — this function runs MaxSim internally per cluster and returns
+# pre-accumulated SCORES directly. Matches ae7c3d exactly.
+#
+# Returns:
+#   cluster_scores : (n_docs,) tensor — weighted sum of per-cluster MaxSim
+#   total_disc_imp : float             — sum of discarded token importances
+# ------------------------------------------------------------------------------
+def build_cluster_pool_scores(
+    q_norm_kept, q_norm_disc,
+    imp_kept, imp_disc,
+    doc_matrix, doc_mask,
+    normalize_mode='pre',
+):
+    P      = q_norm_disc.shape[0]
+    n_docs = doc_matrix.shape[0]
+
+    if P == 0:
+        return torch.zeros(n_docs, device=doc_matrix.device), 0.0
+
+    # Assign each discarded token to its nearest kept token (cosine)
+    sim_assign  = torch.mm(q_norm_disc, q_norm_kept.t())   # (P, K)
+    cluster_ids = sim_assign.argmax(dim=-1)                 # (P,)
+
+    cluster_scores = torch.zeros(n_docs, device=doc_matrix.device)
+    total_disc_imp = imp_disc.sum().item()
+
+    for c in cluster_ids.unique():
+        members = (cluster_ids == c).nonzero(as_tuple=True)[0]
+        w       = imp_disc[members]
+        w_sum   = w.sum().clamp(min=1e-8)
+        w_norm  = w / w_sum
+
+        # Weighted mean of member vectors
+        pool_vec = (q_norm_disc[members] * w_norm.unsqueeze(-1)).sum(dim=0)
+
+        if normalize_mode == 'pre':
+            pool_vec = F.normalize(pool_vec.unsqueeze(0), dim=-1)           # (1, D)
+            sim = torch.einsum('qd,nld->qnl', pool_vec, doc_matrix)
+            sim.masked_fill_(~doc_mask.unsqueeze(0), float('-inf'))
+            ms = sim.max(dim=-1).values.squeeze(0)                          # (n_docs,)
+        else:
+            pool_vec_u = pool_vec.unsqueeze(0)                              # (1, D)
+            sim = torch.einsum('qd,nld->qnl', pool_vec_u, doc_matrix)
+            sim.masked_fill_(~doc_mask.unsqueeze(0), float('-inf'))
+            ms = sim.max(dim=-1).values.squeeze(0)                          # (n_docs,)
+
+        cluster_scores += ms * w_sum.item()
+
+    # Normalise by total discarded importance so scale matches kept-token scores
+    if total_disc_imp > 1e-8:
+        cluster_scores = cluster_scores / total_disc_imp
+
+    return cluster_scores, total_disc_imp
+
+
+def make_ablation_keys_ours():
+    keys = []
+    for n in N_LAST_LAYERS_LIST:
+        for mode in NORMALIZE_MODES:
+            for r in TOPK_RATIOS:
+                tag = f"L{n}_norm{mode}_r{int(r*100)}"
+                keys.append(f"{tag}_trad")
+                keys.append(f"{tag}_weighted")
+    return keys
+
+ABLATION_KEYS_OURS = make_ablation_keys_ours()
+
+print("✅ Fixed SVD helpers + build_cluster_pool_scores loaded.")
+# ==============================================================================
+# Cell 7b — OPTIMIZED: METHOD 2 eval loop
+#
+# Speed optimizations applied:
+#   1. Compute q_method_norm and M_full ONCE per query (not once per n_layers).
+#   2. Precompute per-layer cleaned attention importance once, then reuse for all n_layers.
+#   3. Vectorized cluster pooling (scatter_add + batched MaxSim) to reduce Python loops.
+#   4. Optional latency timing toggle to avoid frequent cuda synchronize overhead.
+# ==============================================================================
+
+print(">>> METHOD 2: Ours — SVD Importance + Cluster Pool (v12-Ablation) [OPTIMIZED]")
+
+ours_metrics        = {}
+ours_domain_metrics = {}
+ours_query_rows     = []
+ours_latency        = LatencyTracker("Ours (SVD+ClusterPool)")
+
+# Turn this on only when you need precise per-ratio latency benchmarking.
+M2_MEASURE_LATENCY = True
+ATTN_CAPTURE_LAST_N = max(N_LAST_LAYERS_LIST)
+
+if torch.cuda.is_available():
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    torch.set_float32_matmul_precision("high")
+
+
+def build_cluster_pool_scores_fast(
+    q_norm_kept, q_norm_disc,
+    imp_disc,
+    doc_matrix, doc_mask,
+    normalize_mode='pre',
+):
+    """
+    Vectorized cluster pooling score builder.
+    Returns: (cluster_scores[n_docs], total_disc_imp)
+    """
+    P = q_norm_disc.shape[0]
+    n_docs = doc_matrix.shape[0]
+
+    if P == 0:
+        return torch.zeros(n_docs, device=doc_matrix.device), 0.0
+
+    K = q_norm_kept.shape[0]
+    D = q_norm_disc.shape[1]
+
+    sim_assign = torch.matmul(q_norm_disc, q_norm_kept.t())  # (P, K)
+    cluster_ids = sim_assign.argmax(dim=-1)                  # (P,)
+
+    # Sum discarded importance per cluster.
+    w_sums = torch.zeros(K, device=q_norm_disc.device, dtype=imp_disc.dtype)
+    w_sums.scatter_add_(0, cluster_ids, imp_disc)
+
+    # Weighted vector sum per cluster.
+    vec_sums = torch.zeros(K, D, device=q_norm_disc.device, dtype=q_norm_disc.dtype)
+    idx2d = cluster_ids.unsqueeze(-1).expand(-1, D)
+    vec_sums.scatter_add_(0, idx2d, q_norm_disc * imp_disc.unsqueeze(-1))
+
+    active = w_sums > 1e-12
+    if not torch.any(active):
+        return torch.zeros(n_docs, device=doc_matrix.device), float(imp_disc.sum().item())
+
+    w_active = w_sums[active]
+    pool_vecs = vec_sums[active] / w_active.unsqueeze(-1).clamp(min=1e-8)
+
+    if normalize_mode == 'pre':
+        pool_vecs = F.normalize(pool_vecs, dim=-1)
+
+    # Batched MaxSim over all active clusters at once.
+    sim = torch.einsum('kd,nld->knl', pool_vecs, doc_matrix)
+    sim.masked_fill_(~doc_mask.unsqueeze(0), float('-inf'))
+    ms = sim.max(dim=-1).values  # (K_active, n_docs)
+
+    cluster_scores = (ms * w_active.unsqueeze(-1)).sum(dim=0)
+    total_disc_imp = float(imp_disc.sum().item())
+    if total_disc_imp > 1e-8:
+        cluster_scores = cluster_scores / total_disc_imp
+
+    return cluster_scores, total_disc_imp
+
+
+def _compute_layer_importance_units(all_attns, content_mask_2d, device_):
+    """
+    Precompute normalized per-layer importance units once:
+    layer_imp_i = normalize(sum_j A_ij over query-dim & head-mean) * content_mask
+    after sink removal.
+    """
+    units = []
+    for attn in all_attns:
+        attn = attn.float().to(device_)
+        B_, H, Sq, Sk = attn.shape
+
+        attn_flat = attn.view(B_ * H, Sq, Sk)
+        cleaned = remove_sink_components_batch(attn_flat, SVD_RANK_REMOVE)
+        cleaned = cleaned.view(B_, H, Sq, Sk)
+
+        layer_imp = cleaned.sum(dim=2).mean(dim=1)
+        layer_imp = layer_imp * content_mask_2d
+        layer_imp = layer_imp / layer_imp.max(dim=-1, keepdim=True).values.clamp(min=1e-8)
+        units.append(layer_imp)
+
+    return units
+
+
+print(f"Running ablation over {len(qa_pairs)} queries")
+print(f"  n_last_layers : {N_LAST_LAYERS_LIST}")
+print(f"  normalize_mode: {NORMALIZE_MODES}")
+print(f"  topk_ratios   : {TOPK_RATIOS}")
+print(f"  measure_latency: {M2_MEASURE_LATENCY}")
+
+pbar = tqdm(enumerate(qa_pairs), total=len(qa_pairs), desc="Ours (SVD+ClusterPool)")
+
+for q_idx, item in pbar:
+    question = item['question']
+    gt_set   = item.get('gt_relevance', item['gt_embed_indices'])
+    domain   = item['domain']
+
+    # ---- Encode query live (with attention hooks) ----
+    proj, raw_outputs, q_inputs, encode_ms = encode_query_live(
+        question, query_processor, query_model, device
+    )
+
+    attn_mask_1d    = q_inputs['attention_mask'][0].float()
+    content_mask_1d = build_content_mask_qwen(q_inputs, query_processor)[0].float()
+
+    trad_idx   = torch.where(attn_mask_1d > 0)[0]
+    method_idx = torch.where(content_mask_1d > 0)[0]
+    if trad_idx.numel() == 0:
+        continue
+    if method_idx.numel() == 0:
+        method_idx = trad_idx
+
+    content_mask_2d = content_mask_1d.unsqueeze(0)
+
+    # ---- Shared query token matrix for all n_layers ----
+    q_embed = proj[0].float()
+    q_method_norm = F.normalize(q_embed[method_idx].float(), dim=-1)  # (N, D)
+    n_method = method_idx.numel()
+
+    # Big win: compute once per query (was repeated per n_layers).
+    M_full_query = fast_maxsim(q_method_norm, doc_matrix, doc_mask)
+    total_q_imp_denom = None
+
+    # ---- Precompute per-layer importance units once ----
+    all_attns = raw_outputs.attentions
+    if all_attns is not None and len(all_attns) > 0:
+        layer_units = _compute_layer_importance_units(all_attns, content_mask_2d, device)
+    else:
+        layer_units = []
+
+    query_row = {
+        'query_id': q_idx,
+        'doc_name': item['doc_name'],
+        'domain':   domain,
+        'question': question,
+    }
+
+    # ---- Ablation: n_last_layers x normalize_mode x ratio ----
+    for n_layers in N_LAST_LAYERS_LIST:
+        if len(layer_units) > 0:
+            n_actual = min(n_layers, len(layer_units))
+            chosen = layer_units[-n_actual:]
+
+            lw = torch.exp(torch.linspace(0, 1, n_actual, device=device))
+            lw = lw / lw.sum()
+
+            importance = torch.zeros_like(content_mask_2d)
+            for i, u in enumerate(chosen):
+                importance += lw[i] * u
+
+            importance = importance * content_mask_2d
+            importance = F.softplus(importance / TEMPERATURE_OURS)
+            importance = importance * content_mask_2d
+        else:
+            # Fallback when attentions are unavailable.
+            importance = content_mask_2d.clone()
+
+        imp_valid = importance[0][method_idx].float()  # (N,)
+        sorted_imp_idx = torch.argsort(imp_valid, descending=True)
+
+        if total_q_imp_denom is None:
+            total_q_imp_denom = imp_valid.sum().clamp(min=1e-8).item()
+
+        for mode in NORMALIZE_MODES:
+            for r in TOPK_RATIOS:
+                tag = f"L{n_layers}_norm{mode}_r{int(r*100)}"
+                n_keep = max(1, int(n_method * r))
+
+                # ---- Token partition ----
+                kept_idx = sorted_imp_idx[:n_keep]
+                disc_idx = sorted_imp_idx[n_keep:]
+
+                q_kept = q_method_norm[kept_idx]
+                q_disc = q_method_norm[disc_idx]
+                imp_kept = imp_valid[kept_idx]
+                imp_disc = imp_valid[disc_idx]
+
+                # Slice from one shared M_full.
+                M_kept = M_full_query[kept_idx]
+
+                cluster_scores, total_disc_imp = build_cluster_pool_scores_fast(
+                    q_kept, q_disc, imp_disc, doc_matrix, doc_mask, normalize_mode=mode,
+                )
+                pool_frac = total_disc_imp / total_q_imp_denom
+
+                # ---- Scoring ----
+                if M2_MEASURE_LATENCY and torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                    t_score_start = time.perf_counter()
+
+                scores_trad = M_kept.sum(dim=0) + cluster_scores * pool_frac
+                top10_trad = torch.topk(scores_trad, min(10, n_docs)).indices.cpu().tolist()
+
+                imp_kept_n = imp_kept / imp_kept.sum().clamp(min=1e-8)
+                scores_wt = (M_kept * imp_kept_n.unsqueeze(-1)).sum(dim=0) + cluster_scores * pool_frac
+                top10_wt = torch.topk(scores_wt, min(10, n_docs)).indices.cpu().tolist()
+
+                if M2_MEASURE_LATENCY and torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                    score_ms = (time.perf_counter() - t_score_start) * 1000.0
+                    ours_latency.add_ratio(r, score_ms)
+
+                m_trad = hit_metrics(top10_trad, gt_set)
+                key_trad = f"{tag}_trad"
+                record(ours_metrics, ours_domain_metrics, key_trad, m_trad, domain)
+                query_row.update({
+                    f'{key_trad}_r@1':     m_trad['r1'],
+                    f'{key_trad}_r@5':     m_trad['r5'],
+                    f'{key_trad}_r@10':    m_trad['r10'],
+                    f'{key_trad}_ndcg@1': round(m_trad['n1'], 4),
+                    f'{key_trad}_ndcg@5': round(m_trad['n5'], 4),
+                    f'{key_trad}_ndcg@10': round(m_trad['n10'], 4),
+                })
+
+                m_wt = hit_metrics(top10_wt, gt_set)
+                key_wt = f"{tag}_weighted"
+                record(ours_metrics, ours_domain_metrics, key_wt, m_wt, domain)
+                query_row.update({
+                    f'{key_wt}_r@1':     m_wt['r1'],
+                    f'{key_wt}_r@5':     m_wt['r5'],
+                    f'{key_wt}_r@10':    m_wt['r10'],
+                    f'{key_wt}_ndcg@1': round(m_wt['n1'], 4),
+                    f'{key_wt}_ndcg@5': round(m_wt['n5'], 4),
+                    f'{key_wt}_ndcg@10': round(m_wt['n10'], 4),
+                })
+
+    ours_query_rows.append(query_row)
+
+    if q_idx % 200 == 0:
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+print_summary(
+    ours_metrics,
+    ours_domain_metrics,
+    ABLATION_KEYS_OURS,
+    title="Ours — SVD Importance + Cluster Pool [OPTIMIZED]",
+)
+
+if M2_MEASURE_LATENCY:
+    ours_latency.report()
+
+pd.DataFrame(ours_query_rows).to_csv(
+    os.path.join(WORKING_DIR, "ours_ablation_queries.csv"), index=False,
+ )
+print("\n✅ Saved: ours_ablation_queries.csv")
+# ==============================================================================
+# TURBO HELPERS for Methods 3-6 (override baseline helpers)
+# ==============================================================================
+
+def spherical_kmeans(X, K, n_iters=KMEANS_ITERS):
+    """Vectorized spherical kmeans via scatter_add."""
+    N, D = X.shape
+    K = min(K, N)
+
+    if K >= N:
+        return X.clone()
+
+    perm = torch.randperm(N, device=X.device)
+    centroids = X[perm[:K]].clone()
+
+    for _ in range(n_iters):
+        sim = torch.mm(X, centroids.t())
+        cluster_ids = sim.argmax(dim=1)
+
+        new_sums = torch.zeros(K, D, device=X.device, dtype=X.dtype)
+        idx2d = cluster_ids.unsqueeze(-1).expand(-1, D)
+        new_sums.scatter_add_(0, idx2d, X)
+
+        counts = torch.zeros(K, device=X.device, dtype=X.dtype)
+        counts.scatter_add_(0, cluster_ids, torch.ones(N, device=X.device, dtype=X.dtype))
+
+        empty = counts < 0.5
+        new_sums[empty] = centroids[empty]
+        counts[empty] = 1.0
+
+        centroids = F.normalize(new_sums / counts.unsqueeze(-1), dim=-1)
+
+    return centroids
+
+
+def random_prune_topk(q_norm, content_idx, doc_matrix, doc_mask,
+                      topk_ratios, n_seeds=N_RANDOM_SEEDS, M_full=None, measure_latency=False, **kwargs):
+    """TURBO: reuse precomputed M_full when provided."""
+    M = q_norm.shape[0]
+    n_docs = doc_matrix.shape[0]
+    device = q_norm.device
+
+    if M == 0:
+        zero = torch.zeros(n_docs, device=device)
+        return {r: zero for r in topk_ratios}, {r: 0.0 for r in topk_ratios}
+
+    if M_full is None:
+        M_full = fast_maxsim(q_norm, doc_matrix, doc_mask)
+
+    results = {}
+    timing = {}
+
+    for ratio in topk_ratios:
+        k = max(1, round(M * ratio))
+        k = min(k, M)
+
+        if measure_latency and torch.cuda.is_available():
+            torch.cuda.synchronize()
+            t0 = time.perf_counter()
+
+        if k == M:
+            scores = M_full.sum(dim=0)
+        else:
+            acc = torch.zeros(n_docs, device=device, dtype=torch.float32)
+            for _ in range(n_seeds):
+                perm = torch.randperm(M, device=device)[:k]
+                acc += M_full[perm].sum(dim=0)
+            scores = acc / n_seeds
+
+        if measure_latency and torch.cuda.is_available():
+            torch.cuda.synchronize()
+            timing[ratio] = (time.perf_counter() - t0) * 1000.0
+        else:
+            timing[ratio] = 0.0
+        results[ratio] = scores
+
+    return results, timing
+
+print("TURBO helper overrides loaded for Methods 3-6.")
+# ==============================================================================
+# METHOD 3 — Hierarchical: Ward agglomerative token pooling [TURBO]
+# ==============================================================================
+
+print(">>> METHOD 3: Hierarchical Ward Token Pooling [TURBO]")
+M3_MEASURE_LATENCY = True
+
+from scipy.cluster.hierarchy import ward as scipy_ward, fcluster
+from scipy.spatial.distance import pdist
+
+
+def ward_pool_scipy(vecs, n_clusters):
+    N = vecs.shape[0]
+    if N <= n_clusters:
+        return vecs.clone()
+
+    vecs_np = vecs.detach().cpu().float().numpy()
+    dists = pdist(vecs_np, metric='cosine')
+    dists = np.clip(dists, 0, 2)
+    Z = scipy_ward(dists)
+    labels = fcluster(Z, t=n_clusters, criterion='maxclust')
+
+    centroids = []
+    for c in range(1, n_clusters + 1):
+        members = (labels == c)
+        if members.any():
+            centroids.append(vecs_np[members].mean(axis=0))
+
+    if not centroids:
+        return vecs[:n_clusters].clone()
+
+    cents = torch.from_numpy(np.stack(centroids)).to(vecs.device, dtype=vecs.dtype)
+    return F.normalize(cents, dim=-1)
+
+
+def ward_pool_scores_all_ratios(q_norm, doc_matrix, doc_mask, topk_ratios):
+    N = q_norm.shape[0]
+    results = {}
+    timing = {}
+
+    for ratio in sorted(topk_ratios, reverse=True):
+        target_C = max(1, round(N * ratio))
+        if target_C >= N:
+            centroids = q_norm.clone()
+        else:
+            centroids = ward_pool_scipy(q_norm, target_C)
+
+        if M3_MEASURE_LATENCY and torch.cuda.is_available():
+            torch.cuda.synchronize()
+            t0 = time.perf_counter()
+            M_c = fast_maxsim(centroids, doc_matrix, doc_mask)
+            results[ratio] = M_c.sum(0)
+            torch.cuda.synchronize()
+            timing[ratio] = (time.perf_counter() - t0) * 1000.0
+        else:
+            M_c = fast_maxsim(centroids, doc_matrix, doc_mask)
+            results[ratio] = M_c.sum(0)
+            timing[ratio] = 0.0
+
+    return results, timing
+
+
+METHOD_KEYS_HIER = ['traditional'] + [f"hier_r{int(r*100)}" for r in TOPK_RATIOS]
+
+hier_metrics = {}
+hier_domain_metrics = {}
+hier_query_rows = []
+hier_latency = LatencyTracker("Hierarchical Ward Pool")
+
+pbar = tqdm(enumerate(qa_pairs), total=len(qa_pairs), desc="Hierarchical Ward Pool TURBO")
+
+for q_idx, item in pbar:
+    question = item['question']
+    gt_set = item.get('gt_relevance', item['gt_embed_indices'])
+    domain = item['domain']
+
+    q_inputs = query_processor.process_queries([question]).to(device)
+    with torch.no_grad():
+        q_proj = query_model(**q_inputs)
+
+    attn_mask = q_inputs['attention_mask'][0]
+    trad_idx = torch.where(attn_mask > 0)[0]
+    q_emb = q_proj[0][trad_idx].float()
+    q_norm = F.normalize(q_emb, dim=-1)
+
+    M_trad = fast_maxsim(q_norm, doc_matrix, doc_mask)
+    trad_sc = M_trad.sum(dim=0)
+    top10_trad = torch.topk(trad_sc, min(10, n_docs)).indices.cpu().tolist()
+    m_trad = hit_metrics(top10_trad, gt_set)
+    record(hier_metrics, hier_domain_metrics, 'traditional', m_trad, domain)
+
+    ratio_scores, ratio_timing = ward_pool_scores_all_ratios(q_norm, doc_matrix, doc_mask, TOPK_RATIOS)
+
+    query_row = {
+        'query_id': q_idx,
+        'doc_name': item['doc_name'],
+        'domain': domain,
+        'question': question,
+        'trad_r@1': m_trad['r1'],
+        'trad_r@5': m_trad['r5'],
+        'trad_r@10': m_trad['r10'],
+        'trad_ndcg@1': round(m_trad['n1'], 4),
+        'trad_ndcg@5': round(m_trad['n5'], 4),
+        'trad_ndcg@10': round(m_trad['n10'], 4),
+    }
+
+    for r in TOPK_RATIOS:
+        key = f"hier_r{int(r*100)}"
+        top10 = torch.topk(ratio_scores[r], min(10, n_docs)).indices.cpu().tolist()
+        m = hit_metrics(top10, gt_set)
+        record(hier_metrics, hier_domain_metrics, key, m, domain)
+        hier_latency.add_ratio(r, ratio_timing[r])
+        query_row.update({
+            f'{key}_r@1': m['r1'],
+            f'{key}_r@5': m['r5'],
+            f'{key}_r@10': m['r10'],
+            f'{key}_ndcg@1': round(m['n1'], 4),
+            f'{key}_ndcg@5': round(m['n5'], 4),
+            f'{key}_ndcg@10': round(m['n10'], 4),
+        })
+
+    hier_query_rows.append(query_row)
+
+print_summary(hier_metrics, hier_domain_metrics, METHOD_KEYS_HIER,
+              title="Hierarchical Ward Pooling Results [TURBO]")
+if M3_MEASURE_LATENCY:
+    hier_latency.report()
+
+pd.DataFrame(hier_query_rows).to_csv(
+    os.path.join(WORKING_DIR, "hierarchical_queries.csv"), index=False)
+print("\n✅ Saved: hierarchical_queries.csv")
+# ==============================================================================
+# METHOD 4 — Attention Score Token Pruning (v13) [TURBO]
+# ==============================================================================
+
+print(">>> METHOD 4: Attention Score Token Pruning (Lassance et al. 2021) [TURBO]")
+M4_MEASURE_LATENCY = True
+ATTN_CAPTURE_LAST_N = max(ATTN_N_LAYERS_LIST)
+
+METHOD_KEYS_ATTN = ['traditional']
+for n in ATTN_N_LAYERS_LIST:
+    for r in TOPK_RATIOS:
+        METHOD_KEYS_ATTN += [
+            f"attn_L{n}_r{int(r*100)}_trad",
+            f"attn_L{n}_r{int(r*100)}_weighted",
+        ]
+
+attn_metrics = {}
+attn_domain_metrics = {}
+attn_query_rows = []
+attn_latency = LatencyTracker("Attention Score Pruning")
+
+pbar = tqdm(enumerate(qa_pairs), total=len(qa_pairs), desc="Attention Score Pruning TURBO")
+
+for q_idx, item in pbar:
+    question = item['question']
+    gt_set = item.get('gt_relevance', item['gt_embed_indices'])
+    domain = item['domain']
+
+    proj, raw_outputs, q_inputs, encode_ms = encode_query_live(
+        question, query_processor, query_model, device
+    )
+
+    attn_mask_1d = q_inputs['attention_mask'][0].float()
+    trad_idx = torch.where(attn_mask_1d > 0)[0]
+    N = trad_idx.numel()
+
+    q_emb = proj[0][trad_idx].float()
+    q_norm = F.normalize(q_emb, dim=-1)
+
+    M_full = fast_maxsim(q_norm, doc_matrix, doc_mask)
+    trad_sc = M_full.sum(dim=0)
+    top10_trad = torch.topk(trad_sc, min(10, n_docs)).indices.cpu().tolist()
+    m_trad = hit_metrics(top10_trad, gt_set)
+    record(attn_metrics, attn_domain_metrics, 'traditional', m_trad, domain)
+
+    query_row = {
+        'query_id': q_idx,
+        'doc_name': item['doc_name'],
+        'domain': domain,
+        'question': question,
+        'trad_r@1': m_trad['r1'],
+        'trad_r@5': m_trad['r5'],
+        'trad_r@10': m_trad['r10'],
+        'trad_ndcg@1': round(m_trad['n1'], 4),
+        'trad_ndcg@5': round(m_trad['n5'], 4),
+        'trad_ndcg@10': round(m_trad['n10'], 4),
+    }
+
+    for n_layers in ATTN_N_LAYERS_LIST:
+        if raw_outputs.attentions is not None and len(raw_outputs.attentions) >= 1:
+            attn_subset = list(raw_outputs.attentions[-n_layers:])
+            imp_2d = torch.zeros(1, q_inputs['attention_mask'].shape[1], device=device)
+            for attn_layer in attn_subset:
+                col_sum = attn_layer.float().sum(dim=2).mean(dim=1)
+                imp_2d += col_sum
+            imp_full = imp_2d[0]
+            imp = imp_full[trad_idx]
+        else:
+            imp = torch.ones(N, device=device)
+
+        sorted_imp_idx = torch.argsort(imp, descending=True)
+
+        for r in TOPK_RATIOS:
+            n_keep = max(1, int(N * r))
+            kept_idx = sorted_imp_idx[:n_keep]
+            imp_kept = imp[kept_idx]
+
+            if M4_MEASURE_LATENCY and torch.cuda.is_available():
+                torch.cuda.synchronize()
+                t_score_start = time.perf_counter()
+
+            # TURBO: reuse precomputed M_full
+            M_kept = M_full[kept_idx]
+            sc_trad = M_kept.sum(dim=0)
+            top_t = torch.topk(sc_trad, min(10, n_docs)).indices.cpu().tolist()
+
+            imp_k_n = imp_kept / imp_kept.sum().clamp(min=1e-8)
+            sc_w = (M_kept * imp_k_n.unsqueeze(-1)).sum(dim=0)
+            top_w = torch.topk(sc_w, min(10, n_docs)).indices.cpu().tolist()
+
+            if M4_MEASURE_LATENCY and torch.cuda.is_available():
+                torch.cuda.synchronize()
+                score_ms = (time.perf_counter() - t_score_start) * 1000.0
+                attn_latency.add_ratio(r, score_ms)
+
+            m_t = hit_metrics(top_t, gt_set)
+            key_t = f"attn_L{n_layers}_r{int(r*100)}_trad"
+            record(attn_metrics, attn_domain_metrics, key_t, m_t, domain)
+            query_row.update({
+                f'{key_t}_r@1': m_t['r1'],
+                f'{key_t}_r@5': m_t['r5'],
+                f'{key_t}_r@10': m_t['r10'],
+                f'{key_t}_ndcg@1': round(m_t['n1'], 4),
+                f'{key_t}_ndcg@5': round(m_t['n5'], 4),
+                f'{key_t}_ndcg@10': round(m_t['n10'], 4),
+            })
+
+            m_w = hit_metrics(top_w, gt_set)
+            key_w = f"attn_L{n_layers}_r{int(r*100)}_weighted"
+            record(attn_metrics, attn_domain_metrics, key_w, m_w, domain)
+            query_row.update({
+                f'{key_w}_r@1': m_w['r1'],
+                f'{key_w}_r@5': m_w['r5'],
+                f'{key_w}_r@10': m_w['r10'],
+                f'{key_w}_ndcg@1': round(m_w['n1'], 4),
+                f'{key_w}_ndcg@5': round(m_w['n5'], 4),
+                f'{key_w}_ndcg@10': round(m_w['n10'], 4),
+            })
+
+    attn_query_rows.append(query_row)
+
+print_summary(attn_metrics, attn_domain_metrics,
+              ['traditional'] + [f"attn_L1_r{int(r*100)}_trad" for r in TOPK_RATIOS],
+              title="Attention Score Pruning (L=1, trad scoring) [TURBO]")
+if M4_MEASURE_LATENCY:
+    attn_latency.report()
+
+pd.DataFrame(attn_query_rows).to_csv(
+    os.path.join(WORKING_DIR, "attention_queries.csv"), index=False)
+print("\n✅ Saved: attention_queries.csv")
+# ==============================================================================
+# METHOD 5 — Spherical KMeans Token Pooling [TURBO]
+# ==============================================================================
+
+print(">>> METHOD 5: Spherical KMeans Token Pooling [TURBO]")
+M5_MEASURE_LATENCY = True
+
+METHOD_KEYS_KMEANS = ['traditional'] + [f"kmeans_r{int(r*100)}" for r in TOPK_RATIOS]
+
+kmeans_metrics = {}
+kmeans_domain_metrics = {}
+kmeans_query_rows = []
+kmeans_latency = LatencyTracker("Spherical KMeans Pool")
+
+pbar = tqdm(enumerate(qa_pairs), total=len(qa_pairs), desc="Spherical KMeans Pool TURBO")
+
+for q_idx, item in pbar:
+    question = item['question']
+    gt_set = item.get('gt_relevance', item['gt_embed_indices'])
+    domain = item['domain']
+
+    q_inputs = query_processor.process_queries([question]).to(device)
+    with torch.no_grad():
+        q_proj = query_model(**q_inputs)
+
+    attn_mask = q_inputs['attention_mask'][0]
+    trad_idx = torch.where(attn_mask > 0)[0]
+    q_emb = q_proj[0][trad_idx].float()
+    q_norm = F.normalize(q_emb, dim=-1)
+    N = q_norm.shape[0]
+
+    M_full = fast_maxsim(q_norm, doc_matrix, doc_mask)
+    trad_sc = M_full.sum(dim=0)
+    top10_trad = torch.topk(trad_sc, min(10, n_docs)).indices.cpu().tolist()
+    m_trad = hit_metrics(top10_trad, gt_set)
+    record(kmeans_metrics, kmeans_domain_metrics, 'traditional', m_trad, domain)
+
+    query_row = {
+        'query_id': q_idx,
+        'doc_name': item['doc_name'],
+        'domain': domain,
+        'question': question,
+        'trad_r@1': m_trad['r1'],
+        'trad_r@5': m_trad['r5'],
+        'trad_r@10': m_trad['r10'],
+        'trad_ndcg@1': round(m_trad['n1'], 4),
+        'trad_ndcg@5': round(m_trad['n5'], 4),
+        'trad_ndcg@10': round(m_trad['n10'], 4),
+    }
+
+    for r in TOPK_RATIOS:
+        K = max(1, int(N * r))
+
+        # TURBO helper spherical_kmeans is vectorized (scatter_add).
+        centroids = spherical_kmeans(q_norm, K)
+
+        if M5_MEASURE_LATENCY and torch.cuda.is_available():
+            torch.cuda.synchronize()
+            t0 = time.perf_counter()
+            M_k = fast_maxsim(centroids, doc_matrix, doc_mask)
+            scores = M_k.sum(dim=0)
+            top10 = torch.topk(scores, min(10, n_docs)).indices.cpu().tolist()
+            torch.cuda.synchronize()
+            score_ms = (time.perf_counter() - t0) * 1000.0
+            kmeans_latency.add_ratio(r, score_ms)
+        else:
+            M_k = fast_maxsim(centroids, doc_matrix, doc_mask)
+            scores = M_k.sum(dim=0)
+            top10 = torch.topk(scores, min(10, n_docs)).indices.cpu().tolist()
+
+        key = f"kmeans_r{int(r*100)}"
+        m = hit_metrics(top10, gt_set)
+        record(kmeans_metrics, kmeans_domain_metrics, key, m, domain)
+        query_row.update({
+            f'{key}_r@1': m['r1'],
+            f'{key}_r@5': m['r5'],
+            f'{key}_r@10': m['r10'],
+            f'{key}_ndcg@1': round(m['n1'], 4),
+            f'{key}_ndcg@5': round(m['n5'], 4),
+            f'{key}_ndcg@10': round(m['n10'], 4),
+        })
+
+    kmeans_query_rows.append(query_row)
+
+print_summary(kmeans_metrics, kmeans_domain_metrics, METHOD_KEYS_KMEANS,
+              title="Spherical KMeans Pooling Results [TURBO]")
+if M5_MEASURE_LATENCY:
+    kmeans_latency.report()
+
+pd.DataFrame(kmeans_query_rows).to_csv(
+    os.path.join(WORKING_DIR, "kmeans_queries.csv"), index=False)
+print("\n✅ Saved: kmeans_queries.csv")
+# ==============================================================================
+# METHOD 6 — Random Token Pruning (v14) [TURBO]
+# ==============================================================================
+
+print(">>> METHOD 6: Random Token Pruning (Ablation Baseline) [TURBO]")
+M6_MEASURE_LATENCY = True
+
+METHOD_KEYS_RAND = ['traditional'] + [f"rand_r{int(r*100)}" for r in TOPK_RATIOS]
+
+rand_metrics = {}
+rand_domain_metrics = {}
+rand_query_rows = []
+rand_latency = LatencyTracker("Random Pruning")
+
+pbar = tqdm(enumerate(qa_pairs), total=len(qa_pairs), desc="Random Pruning TURBO")
+
+for q_idx, item in pbar:
+    question = item['question']
+    gt_set = item.get('gt_relevance', item['gt_embed_indices'])
+    domain = item['domain']
+
+    q_inputs = query_processor.process_queries([question]).to(device)
+    with torch.no_grad():
+        q_proj = query_model(**q_inputs)
+
+    attn_mask = q_inputs['attention_mask'][0]
+    trad_idx = torch.where(attn_mask > 0)[0]
+    q_emb = q_proj[0][trad_idx].float()
+    q_norm = F.normalize(q_emb, dim=-1)
+
+    # Baseline (full tokens) — compute once
+    M_full = fast_maxsim(q_norm, doc_matrix, doc_mask)
+    trad_sc = M_full.sum(dim=0)
+    top10_trad = torch.topk(trad_sc, min(10, n_docs)).indices.cpu().tolist()
+    m_trad = hit_metrics(top10_trad, gt_set)
+    record(rand_metrics, rand_domain_metrics, 'traditional', m_trad, domain)
+
+    query_row = {
+        'query_id': q_idx,
+        'doc_name': item['doc_name'],
+        'domain': domain,
+        'question': question,
+        'trad_r@1': m_trad['r1'],
+        'trad_r@5': m_trad['r5'],
+        'trad_r@10': m_trad['r10'],
+        'trad_ndcg@1': round(m_trad['n1'], 4),
+        'trad_ndcg@5': round(m_trad['n5'], 4),
+        'trad_ndcg@10': round(m_trad['n10'], 4),
+        'n_random_seeds': N_RANDOM_SEEDS,
+    }
+
+    # TURBO: pass M_full to avoid repeated MaxSim calls per ratio/seed
+    try:
+        ratio_scores, ratio_timing = random_prune_topk(
+            q_norm=q_norm,
+            content_idx=trad_idx,
+            doc_matrix=doc_matrix,
+            doc_mask=doc_mask,
+            topk_ratios=TOPK_RATIOS,
+            n_seeds=N_RANDOM_SEEDS,
+            M_full=M_full,
+            measure_latency=M6_MEASURE_LATENCY,
+        )
+    except TypeError:
+        # Backward compatibility with older helper signature without M_full.
+        ratio_scores, ratio_timing = random_prune_topk(
+            q_norm=q_norm,
+            content_idx=trad_idx,
+            doc_matrix=doc_matrix,
+            doc_mask=doc_mask,
+            topk_ratios=TOPK_RATIOS,
+            n_seeds=N_RANDOM_SEEDS,
+            measure_latency=M6_MEASURE_LATENCY,
+        )
+
+    for r in TOPK_RATIOS:
+        key = f"rand_r{int(r*100)}"
+        scores = ratio_scores[r]
+        rand_latency.add_ratio(r, ratio_timing[r])
+
+        top10 = torch.topk(scores, min(10, n_docs)).indices.cpu().tolist()
+        m = hit_metrics(top10, gt_set)
+        record(rand_metrics, rand_domain_metrics, key, m, domain)
+        query_row.update({
+            f'{key}_r@1': m['r1'],
+            f'{key}_r@5': m['r5'],
+            f'{key}_r@10': m['r10'],
+            f'{key}_ndcg@1': round(m['n1'], 4),
+            f'{key}_ndcg@5': round(m['n5'], 4),
+            f'{key}_ndcg@10': round(m['n10'], 4),
+        })
+
+    rand_query_rows.append(query_row)
+
+print_summary(rand_metrics, rand_domain_metrics, METHOD_KEYS_RAND,
+              title="Random Token Pruning Results [TURBO]")
+if M6_MEASURE_LATENCY:
+    rand_latency.report()
+
+pd.DataFrame(rand_query_rows).to_csv(
+    os.path.join(WORKING_DIR, "random_pruning_queries.csv"), index=False)
+print("\n✅ Saved: random_pruning_queries.csv")
+# ==============================================================================
+# FINAL SUMMARY — aggregate results from all methods
+# ==============================================================================
+
+print("=" * 80)
+print("FINAL SUMMARY")
+print("=" * 80)
+
+# ---- Traditional ----
+print_summary(trad_metrics, trad_domain_metrics, ['traditional'],
+              title="Traditional MaxSim")
+
+# ---- Hierarchical best (show all ratios) ----
+print_summary(hier_metrics, hier_domain_metrics, METHOD_KEYS_HIER,
+              title="Hierarchical Ward Pooling")
+
+# ---- Ours (show traditional and trad_weighted) ----
+print_summary(ours_metrics, ours_domain_metrics, ['traditional', 'trad_weighted'],
+              title="Ours — Baseline rows (add importance pkl for full ablation)")
+
+# ---- Attention (L=1, trad scoring) ----
+print_summary(attn_metrics, attn_domain_metrics,
+              ['traditional'] + [f"attn_L1_r{int(r*100)}_trad" for r in TOPK_RATIOS],
+              title="Attention Score Pruning (L=1)")
+
+# ---- Spherical KMeans ----
+print_summary(kmeans_metrics, kmeans_domain_metrics, METHOD_KEYS_KMEANS,
+              title="Spherical KMeans Pooling")
+
+# ---- Random Pruning ----
+print_summary(rand_metrics, rand_domain_metrics, METHOD_KEYS_RAND,
+              title="Random Token Pruning (Ablation Baseline)")
+
+# ==============================================================================
+# Save master summary CSVs
+# ==============================================================================
+
+def save_summary_csv(metrics, domain_metrics, method_keys, prefix):
+    # Overall
+    rows = []
+    for key in method_keys:
+        if key not in metrics: continue
+        m = metrics[key]; cnt = m['count'] or 1
+        rows.append({
+            'method':   key,
+            'r@1':      round(m['r1']  / cnt * 100, 4),
+            'r@5':      round(m['r5']  / cnt * 100, 4),
+            'r@10':     round(m['r10'] / cnt * 100, 4),
+            'ndcg@1':   round(m['n1']  / cnt,       6),
+            'ndcg@5':   round(m['n5']  / cnt,       6),
+            'ndcg@10':  round(m['n10'] / cnt,       6),
+            'count':    cnt,
+        })
+    df_sum = pd.DataFrame(rows)
+    df_sum.to_csv(os.path.join(WORKING_DIR, f"{prefix}_summary.csv"), index=False)
+
+    # Per-domain
+    dom_rows = []
+    for domain in sorted(domain_metrics):
+        dm  = domain_metrics[domain]
+        row = {'domain': domain}
+        for key in method_keys:
+            m_   = dm.get(key, _init_metric()); cnt_ = m_['count'] or 1
+            row[f'{key}_ndcg10'] = round(m_['n10'] / cnt_, 6)
+            row[f'{key}_r10']    = round(m_['r10'] / cnt_ * 100, 4)
+        dom_rows.append(row)
+    pd.DataFrame(dom_rows).to_csv(
+        os.path.join(WORKING_DIR, f"{prefix}_domain.csv"), index=False)
+
+    print(f"✅ Saved: {prefix}_summary.csv and {prefix}_domain.csv")
+
+save_summary_csv(trad_metrics, trad_domain_metrics, ['traditional'], "traditional")
+save_summary_csv(hier_metrics, hier_domain_metrics, METHOD_KEYS_HIER, "hierarchical")
+save_summary_csv(ours_metrics, ours_domain_metrics, ABLATION_KEYS_OURS, "ours_ablation")
+save_summary_csv(attn_metrics, attn_domain_metrics, METHOD_KEYS_ATTN, "attention_pruning")
+save_summary_csv(kmeans_metrics, kmeans_domain_metrics, METHOD_KEYS_KMEANS, "spherical_kmeans")
+save_summary_csv(rand_metrics, rand_domain_metrics, METHOD_KEYS_RAND, "random_pruning")
+
+print("\n>>> All evaluations complete.")

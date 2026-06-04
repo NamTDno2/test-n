@@ -1,0 +1,143 @@
+﻿lambda_rel,doc_name,domain,question,layout_retrieved,gt,first_hit_rank,recall
+0.5,Macbook_air,Guidebook,"How many figures are shown in this guidebook to teach users ""Two-finger scrolling"" tips?","[5176, 5177, 5502, 5174, 5505, 6065, 5181, 8764, 7242, 7238]","[5176, 5177]",1,1.0
+0.5,Macbook_air,Guidebook,"According to this guideline, enumerate all jacks or ports located at the right side of MacBook Air.","[5162, 5365, 5056, 5031, 5163, 5228, 5059, 5184, 5165, 5052]","[5161, 5163]",5,0.5
+0.5,Macbook_air,Guidebook,"List all the countries/regions mentioned in the ""Regulatory Compliance Information"" part of this guidebook (except the U.S.). Your answer should be in English.","[20091, 9180, 11441, 51, 16521, 20097, 7011, 14527, 4056, 20099]","[5444, 5417, 5419, 5422, 5424, 5393, 5456, 5431, 5433]",Not Found,0.0
+0.5,Macbook_air,Guidebook,"I'm a Macbook Air user in Mexico.  According to this guidebook, which number shall I call for seeking Applecare service and support?","[5505, 5359, 5263, 5209, 5335, 5081, 5091, 5294, 5191, 5465]",[5338],Not Found,0.0
+0.5,Macbook_air,Guidebook,"According to this guideline, what is on the left side of the MacBook Air's camera?","[5141, 5200, 5123, 5125, 5127, 5124, 5129, 5365, 5056, 5128]",[5141],1,1.0
+0.5,NUS-FASS-Graduate-Guidebook-2021-small,Guidebook,List all the Chinese universities that have a student exchange programme with FASS. Write the answer in alphabetical order.,"[18857, 18860, 19053, 18878, 18855, 18871, 19216, 18901, 18902, 19047]",[18894],Not Found,0.0
+0.5,NUS-FASS-Graduate-Guidebook-2021-small,Guidebook,"For all the people that appear in the guidebook to speak for their department or programmes, how many of them are assistant professors? ","[18978, 18879, 18855, 5541, 1059, 19009, 19380, 19005, 18984, 19053]",[19345],Not Found,0.0
+0.5,NUS-Business-School-BBA-Brochure-2024,Brochure,"From 2022 graduate employment survey,  graduates with which degree have the highest average monthly salary?","[18629, 18879, 19292, 18630, 18627, 18878, 18946, 18631, 18628, 19093]","[18632, 18629, 18631]",1,0.67
+0.5,NUS-Business-School-BBA-Brochure-2024,Brochure,What are the representative courses for majors that need 64 major curriculum units?,"[18677, 18946, 18961, 18670, 18667, 18624, 19027, 19162, 18683, 14553]","[18677, 18700, 18701]",1,0.33
+0.5,NUS-Business-School-BBA-Brochure-2024,Brochure,How many social media accounts might NUS Business School have?,"[18851, 18737, 18666, 18854, 18626, 18849, 18758, 18831, 18706, 18762]","[18851, 18852, 18853]",1,0.33
+0.5,NUS-Business-School-BBA-Brochure-2024,Brochure,"In the photo provided by BRYAN VOON,  how many different people are there wearing glasses?","[18833, 18832, 18829, 18831, 18830, 18730, 19234, 422, 18729, 1938]",[18833],1,1.0
+0.5,NUS-Business-School-BBA-Brochure-2024,Brochure,How many weeks do students need to reach work experience milestone and get 8 units?,"[7759, 6332, 18904, 5719, 4146, 18723, 6318, 10005, 646, 6457]","[18720, 18723, 18767]",6,0.33
+0.5,NETFLIX_2015_10K,Financial report,"what is the FY2015 unadjusted EBITDA % margin for Netflix?Answer in percentage term, round to one decimal place.","[1144, 474, 1450, 1690, 1448, 1669, 1085, 18018, 2533, 1615]","[17529, 17525]",Not Found,0.0
+0.5,NETFLIX_2015_10K,Financial report,What is Netflix working capital in FY2015?Answer in thousands.,"[474, 17329, 2545, 2503, 17700, 2544, 1144, 1434, 4879, 1669]",[17322],Not Found,0.0
+0.5,NETFLIX_2015_10K,Financial report,What is sales to working capital ratio of Neflix in FY 2015?Round your answer to two decimal places.,"[3873, 3142, 2874, 485, 17529, 7638, 1609, 1476, 12782, 487]","[17529, 17531, 17525]",5,0.33
+0.5,NETFLIX_2015_10K,Financial report,What amount did  personnel-related costs increase for Netfilx in 2015? Answer in millions.,"[17700, 6616, 19720, 3866, 8529, 18437, 18363, 17239, 2896, 3873]","[17373, 17374]",Not Found,0.0
+0.5,NETFLIX_2015_10K,Financial report,what is advertsing expense of Neflix in FY 2015? Answer in millions,"[4161, 8613, 17525, 3874, 485, 9127, 3873, 4163, 16411, 3875]","[17561, 17574]",Not Found,0.0
+0.5,NETFLIX_2015_10K,Financial report,what is advertsing expense to sales ratio of Neflix in FY 2015? Round your answer to three decimal places.,"[17850, 8768, 1570, 13278, 1669, 4024, 18470, 17699, 6901, 18341]","[17561, 17525, 17574]",Not Found,0.0
+0.5,NETFLIX_2015_10K,Financial report,what is research and development expense of Neflix in FY 2015? Answer in thousands.,"[16091, 13259, 4163, 13168, 4161, 6571, 12473, 17525, 13609, 16275]",[17372],Not Found,0.0
+0.5,NETFLIX_2015_10K,Financial report,what is sales to stockholder equity ratio  of Neflix in FY 2015? Round your answer to three decimal places.,"[17533, 20116, 16388, 7591, 485, 7638, 1602, 17529, 3892, 20121]","[17529, 17531, 17525]",8,0.33
+0.5,NETFLIX_2015_10K,Financial report,what method did netflix use to pay the dividend to shareholders in FY2015.,"[17525, 17531, 17527, 8529, 17316, 17533, 17699, 245, 17704, 17700]",[17585],Not Found,0.0
+0.5,NETFLIX_2015_10K,Financial report,what is operating leases occurred in FY 2015 for Netfilx?Answer in million.,"[7585, 7582, 2770, 3886, 3373, 18315, 7360, 17582, 3374, 13558]",[17632],Not Found,0.0
+0.5,NETFLIX_2015_10K,Financial report,"what percentage did Global streaming memberships increase from 2014 to 2015?Answer in percentage term, round to one decimal places.","[17329, 17323, 17194, 17192, 8543, 8529, 17538, 17197, 8567, 9304]",[17329],1,1.0
+0.5,NETFLIX_2015_10K,Financial report,what profit  did Memberships contribute to in Domestic Streaming Segment in FY2015? Answer in thousands.,"[17197, 17694, 17696, 17687, 17349, 17692, 17447, 17698, 17693, 17695]",[17340],Not Found,0.0
+0.5,NIKE_2021_10K,Financial report,what is the FY2021 inventory turnover ratio for Nike?Round your answer to two decimal places.,"[18491, 996, 18490, 4221, 1013, 11659, 2527, 1670, 1016, 355]","[18249, 18254]",Not Found,0.0
+0.5,NIKE_2021_10K,Financial report,What is receive turnover in FY2021 for Nike? Round your answer to two decimal places.,"[17992, 18038, 18470, 18491, 17835, 18069, 996, 17781, 18558, 18037]","[18249, 18254]",Not Found,0.0
+0.5,NIKE_2021_10K,Financial report,What is payables  turnover in FY2021 for Nike? Round your answer to two decimal places.,"[18491, 18470, 18038, 996, 17835, 18023, 17992, 18471, 18558, 18018]","[18249, 18254]",Not Found,0.0
+0.5,NIKE_2021_10K,Financial report,What is  cash_ratio in FY2021 for Nike? Round your answer to two decimal places.,"[2929, 17991, 4260, 17992, 18075, 16123, 18037, 3343, 18032, 18071]",[18254],Not Found,0.0
+0.5,NIKE_2021_10K,Financial report,What is  cash conversion cycle in FY2021 for Nike? Round your answer to two decimal places.,"[497, 18032, 501, 18075, 18069, 3149, 18071, 499, 18037, 18013]","[18249, 18254]",Not Found,0.0
+0.5,NIKE_2021_10K,Financial report,What is current ratio in FY2021 for Nike?  Round your answer to two decimal places.,"[18013, 18038, 17992, 1670, 18490, 18249, 18080, 996, 18041, 18028]",[18254],Not Found,0.0
+0.5,NIKE_2021_10K,Financial report,"What is cash ratio  in FY2021 for Nike? Round your answer to two decimal places.
+
+ ","[18038, 18031, 17992, 18041, 18034, 4260, 18028, 18070, 1014, 18030]",[18254],Not Found,0.0
+0.5,NIKE_2021_10K,Financial report,"What is quick ratio cycle in FY2021 for Nike? Round your answer to two decimal places.
+
+","[17992, 17991, 18031, 18037, 17835, 1085, 18028, 996, 18013, 18038]",[18254],Not Found,0.0
+0.5,NIKE_2021_10K,Financial report,what is accrual liabilities in FY2021 for Nike? Answer in millions.,"[18254, 18470, 18491, 18353, 1144, 18490, 18472, 996, 18251, 18025]",[18356],Not Found,0.0
+0.5,NIKE_2021_10K,Financial report,What are the  key categories that Nike focuses on for their brand product offerings?,"[18470, 18471, 17793, 17759, 17975, 18025, 18072, 18038, 17799, 18032]",[17759],4,1.0
+0.5,N19-1170,Academic paper,Does increasing specificity in responses lead to more nonsensical outputs?,"[6046, 6053, 6140, 6145, 6138, 6085, 6052, 6045, 6135, 6054]",[6044],Not Found,0.0
+0.5,N19-1170,Academic paper,Was the conditional training method effective in controlling response-relatedness?,"[6022, 6034, 5995, 6067, 6009, 6054, 6061, 6140, 6138, 6143]","[6040, 6054]",6,0.5
+0.5,N19-1170,Academic paper,How is the attribute of Specificity quantitatively determined according to Figure 1?,"[6001, 6076, 6078, 5999, 6087, 6034, 11197, 5883, 6140, 6151]",[5999],4,1.0
+0.5,N19-1170,Academic paper,How does the introduction of repetition control affect the question-asking rate at the highest control level (z=10)?,"[6058, 6061, 6140, 6084, 6144, 6089, 6034, 6151, 6098, 5999]",[6061],2,1.0
+0.5,N18-2084,Academic paper,Did multilingual pre-training benefit all language pairs in this research?,"[5965, 5981, 5962, 5948, 5934, 5974, 5944, 5968, 5943, 5953]","[5968, 5954]",8,0.5
+0.5,N18-2084,Academic paper,Which dataset experienced the largest decrease in BLEU score after alignment according to Table 4?,"[5966, 5727, 5627, 5950, 5943, 1048, 5725, 6616, 7116, 5960]",[5960],10,1.0
+0.5,N18-2084,Academic paper,What is the total number of sentences in the training sets for Romance languages as given in Table 1?,"[5672, 131, 5961, 5950, 5705, 5948, 5718, 5716, 5900, 5717]",[5937],Not Found,0.0
+0.5,N19-1421,Academic paper,What is the highest accuracy percentage achieved by any model according to Table 5?,"[5625, 6145, 6486, 155, 6147, 6229, 5726, 171, 5627, 5716]",[6486],3,1.0
+0.5,N19-1421,Academic paper,What percent of formulated questions in the CommonsenseQA use spatial concepts as a significant factor?,"[6463, 6421, 6448, 6460, 6410, 6458, 6433, 6499, 6135, 6423]","[6458, 6447]",6,0.5
+0.5,N19-1421,Academic paper,"According to Figure 4, is it more common for questions to start with ""why"" or ""where,"" and by what percentage are they different?","[6463, 6057, 6453, 6061, 4703, 6445, 6415, 6412, 6058, 6218]","[6452, 6463]",1,0.5
+0.5,N19-1421,Academic paper,Which model achieved the highest accuracy on the random split according to Table 5?,"[6486, 6485, 6484, 155, 6489, 5722, 5725, 5726, 5736, 6478]",[6486],1,1.0
+0.5,N19-1421,Academic paper,What is the accuracy percentage of the BERT-LARGE model when answering questions about factoid knowledge according to Table 6?,"[6486, 6410, 6493, 6494, 6487, 874, 5539, 6090, 6421, 6229]",[6487],5,1.0
+0.5,N19-1421,Academic paper,Which CONCEPTNET relation has the highest frequency in COMMONSENSEQA according to Table 2?,"[6451, 6445, 6465, 6410, 6452, 6458, 6419, 8302, 6229, 5906]",[6452],5,1.0
+0.5,N19-1421,Academic paper,What is the average length of questions measured in tokens in COMMONSENSEQA according to Table 1?,"[6445, 6460, 4190, 6458, 6449, 5657, 6475, 6151, 5705, 6463]","[6433, 6445]",1,0.5
+0.5,N19-1421,Academic paper,What percentage of questions analyzed begin with a WH word according to Figure 4?,"[6456, 6061, 5886, 6458, 5681, 6218, 6138, 5981, 5892, 6087]","[6452, 6463]",Not Found,0.0
+0.5,N19-1421,Academic paper,What is the last reference mentioned in the paper?,"[6298, 6166, 5672, 5933, 5715, 5593, 6296, 5775, 3838, 6167]",[6520],Not Found,0.0
+0.5,N19-1240,Academic paper,Does the Entity-GCN model use recurrent document encoders?,"[6172, 6175, 6170, 6212, 6214, 6160, 6225, 6213, 6236, 6279]",[6172],1,1.0
+0.5,N19-1240,Academic paper,What is the significance of the R-GCN component within the Entity-GCN model based on the ablation study?,"[6221, 6218, 6225, 6279, 6223, 6222, 6227, 6224, 6220, 6226]","[6220, 6212]",9,0.5
+0.5,N19-1240,Academic paper,Which model outperformed all other models on the unmasked development set according to Table 2?,"[171, 6486, 5625, 6222, 6369, 6214, 6346, 5597, 6480, 6464]",[6214],6,1.0
+0.5,N19-1240,Academic paper,What is the maximum number of candidates found in any of the samples of the WikiHop dataset?,"[6275, 6286, 6232, 6177, 6208, 5954, 6207, 5846, 6163, 6061]","[6209, 6193]",Not Found,0.0
+0.5,N19-1240,Academic paper,What is the unmasked score of the full (single) model as per Table 3?,"[6222, 163, 6486, 5583, 5854, 171, 5906, 6378, 5736, 6214]",[6222],1,1.0
+0.5,N19-1240,Academic paper,"Based on Table 3, how did removing relation types affect the unmasked performance compared to the full (single) model?","[6222, 6224, 6229, 6369, 5835, 6214, 6220, 5853, 5906, 6485]",[6222],1,1.0
+0.5,L18-1269,Academic paper,What metric is used to measure the performance of the caption-image compatibility score?,"[6145, 137, 5647, 3820, 3817, 13580, 3886, 3884, 6147, 474]",[140],Not Found,0.0
+0.5,L18-1269,Academic paper,On which page does the paper detail the baseline models?,"[6013, 6480, 6463, 6229, 6472, 6147, 6461, 6473, 6468, 6132]",[162],Not Found,0.0
+0.5,N18-1187,Academic paper,What effect did imitation learning have on the SL model before applying reinforcement learning?,"[5845, 5840, 5857, 5853, 5848, 5828, 5768, 5846, 5820, 5775]",[5843],Not Found,0.0
+0.5,N18-1187,Academic paper,Which training setting achieved the highest task success rate over time according to Figure 6?,"[5840, 5851, 5771, 5849, 5848, 5979, 5981, 5842, 5843, 5846]",[5849],4,1.0
+0.5,N18-1187,Academic paper,What is the function of the Bi-LSTM Utterance Encoder in the system architecture?,"[5797, 5787, 6236, 5911, 5625, 6322, 6292, 5790, 6297, 5536]",[5797],1,1.0
+0.5,N18-1187,Academic paper,How does the system generate a response to the user's request?,"[5797, 6130, 5801, 6144, 5216, 5806, 5796, 5788, 5787, 6135]",[5797],1,1.0
+0.5,N18-2072,Academic paper,What is the name of the language model used for contextual augmentation in this paper?,"[5881, 5903, 5905, 5878, 5883, 5893, 6138, 5886, 5921, 5911]",[5881],1,1.0
+0.5,N18-2072,Academic paper,"How much did the average accuracy improve when using the model with context and label compared to the model with synonym, for the RNN architecture?","[5906, 5835, 5837, 5905, 5881, 155, 5999, 5848, 5911, 6421]",[5906],1,1.0
+0.5,N18-2072,Academic paper,What is the main purpose of the contextual augmentation method illustrated in Figure 1?,"[5886, 5883, 5893, 6061, 5881, 5903, 5681, 5884, 5888, 5540]",[5881],5,1.0
+0.5,N18-2072,Academic paper,What is the brief summary of Section 2.1?,"[14738, 14745, 2676, 13879, 10969, 7309, 14673, 2333, 15300, 19449]","[5888, 5880]",Not Found,0.0
+0.5,N18-1008,Academic paper,Do all variations of the attentional model have encoders that are attended to by decoders?,"[5995, 5569, 5547, 6014, 6057, 6169, 5623, 6030, 5554, 15945]",[5569],2,1.0
+0.5,N18-1008,Academic paper,Did the invertibility regularizer increase BLEU scores in more than half of the cases?,"[5629, 5627, 5945, 5956, 5539, 5951, 5928, 5645, 5597, 5716]","[5617, 5629]",1,0.5
+0.5,N18-1008,Academic paper,"Which model performed best for the French-to-English language pair according to Table 4, and what was its BLEU score?","[5627, 5583, 5725, 5727, 171, 5716, 5943, 5597, 5539, 5629]","[5627, 5615]",1,0.5
+0.5,N18-1008,Academic paper,How does the multitask model represented in Figure 1b differ from the single-task model in Figure 1a in terms of decoder attention?,"[5547, 5569, 5601, 5605, 5540, 6396, 5554, 6218, 5848, 5851]",[5569],2,1.0
+0.5,N18-1008,Academic paper,How many tables are there in the paper?,"[11747, 18095, 180, 16302, 18087, 8020, 9243, 7918, 17312, 9237]","[5569, 5605, 5577, 5583, 5615, 5627]",Not Found,0.0
+0.5,N18-1012,Academic paper,Is the GYAFC dataset the largest corpus for formality style transfer?,"[5648, 5649, 5650, 5647, 5657, 5670, 5690, 5665, 5692, 5660]",[5652],Not Found,0.0
+0.5,N18-1012,Academic paper,Which model received the highest human fluency score?,"[5722, 125, 5685, 5634, 5660, 6471, 5724, 5625, 6145, 6087]",[5716],Not Found,0.0
+0.5,N18-1012,Academic paper,"How many sentences are there in the training set for the ""Informal to Formal"" direction?","[5672, 5679, 5674, 5717, 5680, 5682, 5719, 5670, 5739, 5685]",[5672],1,1.0
+0.5,N18-1012,Academic paper,How does the mean formality score of formal rewrites compare to that of the original informal sentences according to Figure 2?,"[5680, 5679, 5681, 5682, 171, 172, 5670, 5717, 5671, 5683]",[5680],1,1.0
+0.5,N18-1012,Academic paper,On which page do the researchers discuss about future work?,"[5744, 18639, 5742, 5745, 1019, 1010, 19127, 15827, 5746, 19847]",[5742],3,1.0
+0.5,N19-1308,Academic paper,What are the techniques that contribute to the performance improvements of DYGIE on the SciERC dataset?,"[6358, 6355, 6351, 6348, 6368, 6356, 6369, 6322, 6364, 6378]","[6349, 6358]",1,0.5
+0.5,N19-1308,Academic paper,Which dataset in Table 3 has the largest number of documents (Docs)?,"[6343, 6360, 6209, 6445, 16187, 16916, 5854, 13457, 3817, 11774]","[6360, 6351]",2,0.5
+0.5,N19-1308,Academic paper,What is the F1 score for DyGIE on pronoun entity performance according to Table 7?,"[6378, 6368, 6369, 6394, 6380, 6351, 6385, 6357, 6386, 6355]",[6378],1,1.0
+0.5,N19-1308,Academic paper,Which system achieved the highest F1 score for entity recognition on the ACE04 dataset?,"[6368, 6351, 6357, 6369, 6380, 6361, 6370, 6343, 6360, 6378]",[6351],2,1.0
+0.5,N19-1308,Academic paper,Which entity category saw the greatest positive difference in its confusion matrix count after adding CorefProp?,"[6387, 6380, 6357, 6378, 6382, 6379, 6389, 6369, 5727, 5725]",[6393],Not Found,0.0
+0.5,N19-1308,Academic paper,What is the combined total of entity categories in the ACE04 and ACE05 datasets?,"[6368, 6351, 6343, 6355, 6360, 6357, 6385, 6352, 6373, 6302]","[6360, 6351]",2,1.0
+0.5,N19-1308,Academic paper,"At which iteration number does the coreference layer achieve the best performance, according to Figure 3a?","[6390, 6381, 6396, 6380, 6319, 6332, 155, 6322, 5816, 6586]","[6361, 6380]",4,0.5
+0.5,N19-1308,Academic paper,What is the purpose of the sentence-level BiLSTM in the DYGIE model?,"[6322, 6380, 6394, 6301, 6368, 6369, 6306, 6393, 6398, 6392]",[6322],1,1.0
+0.5,NASDAQ_TXN_2020,Financial report,What is the stock ownership guideline for the CEO of this company?,"[16877, 7871, 13012, 7158, 7874, 16683, 9428, 17281, 13083, 13585]","[16877, 16863]",1,0.5
+0.5,NASDAQ_TXN_2020,Financial report,Which company listed in the comparator group has the highest market capitalization by 2020 and what is the amount?,"[16798, 16799, 16821, 13587, 16794, 13597, 13590, 13083, 13061, 9157]",[16799],2,1.0
+0.5,NASDAQ_TXN_2020,Financial report,What is the total amount of long-term debt obligation payments due for the company after 2025?,"[11743, 7189, 18379, 9355, 18151, 11747, 18381, 11744, 19810, 12360]",[16127],Not Found,0.0
+0.5,NASDAQ_TXN_2020,Financial report,What is the company's free cash flow by the end of year 2020?,"[16079, 17413, 16830, 17418, 16831, 17419, 16068, 518, 16824, 17421]",[16162],Not Found,0.0
+0.5,NASDAQ_TXN_2020,Financial report,How much did the company's capital expenditures change from 2019 to 2020?,"[7182, 16118, 1607, 9110, 13062, 13080, 1651, 9271, 1632, 3881]",[16124],Not Found,0.0
+0.5,NASDAQ_TXN_2020,Financial report,How many times does the paper mention Money market funds?,"[13360, 16354, 16343, 16351, 13447, 9454, 17599, 12488, 13448, 19510]","[16338, 16343, 16351]",3,0.67
+0.5,NASDAQ_AMGN_2020,Financial report,What positions did Dr. Reese hold at the Company between 2015 and 2018?,"[6889, 7689, 19297, 6890, 13356, 14931, 1903, 6602, 9090, 1902]",[6889],1,1.0
+0.5,NASDAQ_AMGN_2020,Financial report,What is the percentage change in cash and cash equivalents of the company at the end of 2020 relative to the beginning of the year?,"[18257, 7378, 16185, 12475, 8882, 507, 3886, 9096, 2929, 8199]",[7369],Not Found,0.0
+0.5,NASDAQ_AMGN_2020,Financial report,How much did total assets of the company change from 2018 to 2020?,"[16070, 19703, 3513, 2783, 7066, 11831, 20021, 20055, 470, 7378]",[7066],5,1.0
+0.5,NASDAQ_AMGN_2020,Financial report,What was the total revenue in the United States for the year ended 2020?,"[9279, 16221, 7468, 8977, 2875, 11831, 3940, 3945, 3939, 2876]",[7468],3,1.0
+0.5,NASDAQ_AMGN_2020,Financial report,By how much did the company's net income change from the year 2018 to 2020?,"[7523, 7364, 18251, 16247, 12474, 7066, 20008, 18022, 7360, 13259]",[7066],6,1.0
+0.5,NASDAQ_AMGN_2020,Financial report,What is the main content presented in the final page?,"[5027, 15565, 815, 19925, 11310, 4616, 7483, 18657, 8827, 4767]","[7760, 7761, 7762, 7763]",Not Found,0.0
+0.5,LSE_BHP_2021,Financial report,Did BHP pay dividends to its shareholders in FY2021?,"[4484, 2667, 2640, 3208, 2722, 1590, 3217, 3028, 2685, 2373]","[360, 359]",Not Found,0.0
+0.5,LSE_BHP_2021,Financial report,How much did the GHG emissions from the processing of sold products change from 2019 to 2021?,"[1048, 4198, 1019, 1055, 4216, 1058, 1026, 18693, 16824, 1661]",[1048],1,1.0
+0.5,LSE_BHP_2021,Financial report,What was the most reported type of business conduct case in FY2021?,"[964, 961, 963, 962, 1566, 452, 960, 951, 976, 887]","[937, 963]",3,0.5
+0.5,NASDAQ_CMCSA_2021,Financial report,What was the aggregate principal amount of fixed-rate Euro senior notes issued by the company in 2021?,"[9117, 8313, 8312, 7170, 7237, 12620, 12395, 18380, 13489, 9894]",[9117],1,1.0
+0.5,NASDAQ_CMCSA_2021,Financial report,What was the total equity of Comcast Corporation at the end of 2019?,"[9563, 7066, 2932, 3480, 8297, 19925, 9204, 11762, 9189, 12476]",[9237],Not Found,0.0
+0.5,NASDAQ_CMCSA_2021,Financial report,Did the total number of residential customer relationships increase from 2019 to 2021?,"[8923, 8924, 8486, 8483, 8648, 6, 9055, 8925, 8933, 13606]","[8923, 8924]",1,1.0
+0.5,NASDAQ_CMCSA_2021,Financial report,What segment contributed the most to the company's revenue in 2021?,"[8977, 8923, 11831, 19752, 18069, 16077, 8894, 12298, 2885, 8901]",[8469],Not Found,0.0
+0.5,NASDAQ_CMCSA_2021,Financial report,What was the total number of Comcast’s common stock shares repurchased during 2021?,"[8855, 7374, 9492, 9493, 12282, 11462, 16197, 11529, 16195, 18259]",[8855],1,1.0
+0.5,NASDAQ_CMCSA_2021,Financial report,What was the total revenue of Comcast Corporation in 2021?,"[9272, 8891, 8905, 8866, 9236, 9271, 9042, 9239, 8857, 8855]","[8888, 8891]",2,0.5
+0.5,NASDAQ_CMCSA_2021,Financial report,By how much did the company's interest expense change from 2020 to 2021?,"[8910, 18023, 12315, 13546, 11505, 9236, 18061, 18249, 9275, 7513]","[8888, 8891]",Not Found,0.0
+0.5,NASDAQ_CMCSA_2021,Financial report,On which page is the table of contents located at?,"[11311, 7791, 13919, 17747, 9243, 15898, 17641, 17663, 8024, 7808]","[8458, 8459]",Not Found,0.0
+0.5,NASDAQ_TSLA_2020,Financial report,On which page does the report provide information on executive compensation?,"[19762, 19483, 7141, 9068, 11855, 13081, 9024, 17369, 11854, 8459]",[13715],Not Found,0.0
+0.5,NASDAQ_TSLA_2020,Financial report,What was the total revenue of Tesla for the year 2020?,"[13047, 6540, 13301, 13293, 9279, 7128, 13259, 8925, 13146, 13245]",[13052],Not Found,0.0
+0.5,NASDAQ_TSLA_2020,Financial report,How did the working capital of the company change from 2016 to 2020?,"[13052, 8047, 7066, 7364, 19793, 8210, 3075, 19407, 7565, 18053]",[13052],1,1.0
+0.5,NASDAQ_TSLA_2020,Financial report,What's the percentage increase in gross profit of the company from 2017 to 2020?,"[12307, 16090, 13052, 13682, 18037, 11791, 13153, 19419, 18023, 9348]",[13052],3,1.0
+0.5,NASDAQ_ATLX_2020,Financial report,Is the Bahia Rare Earths Project located in Brazil?,"[7929, 7936, 7932, 7927, 7931, 7934, 7928, 7930, 7933, 7917]",[7929],1,1.0
+0.5,NASDAQ_ATLX_2020,Financial report,What is the total area for Lithium properties held by the company in Brazil by the end of 2020?,"[7800, 13200, 13226, 3603, 3748, 4188, 14823, 3957, 11591, 3956]",[8018],Not Found,0.0
+0.5,NASDAQ_ATLX_2020,Financial report,On which page does the document present the signature part?,"[13916, 13915, 13917, 13759, 17513, 17836, 4158, 10032, 10030, 6468]",[8383],Not Found,0.0
+0.5,NASDAQ_QCOM_2021,Financial report,How much cash and cash equivalents did QUALCOMM have at the beginning of 2021?,"[11640, 9453, 12600, 8199, 11516, 8882, 18144, 16185, 2929, 13493]",[12475],Not Found,0.0
+0.5,NASDAQ_QCOM_2021,Financial report,Did the company's income tax expense increase from 2020 to 2021?,"[11801, 12323, 3007, 12324, 3006, 8891, 9236, 9340, 19781, 7513]",[12581],Not Found,0.0
+0.5,NASDAQ_QCOM_2021,Financial report,How did the net gains on marketable securities change from fiscal 2019 to fiscal 2021?,"[12318, 12577, 12636, 12315, 12351, 12317, 12291, 18022, 12474, 12490]",[12577],2,1.0
+0.5,NASDAQ_QCOM_2021,Financial report,What is the primary focus of page 41?,"[13627, 14924, 13380, 13152, 20183, 13519, 3588, 16097, 8915, 8149]","[12289, 12290, 12291, 12292, 12294, 12275, 12276]",Not Found,0.0
+0.5,NASDAQ_COST_2022,Financial report,What is the future minimum payment for finance leases in 2025?,"[9461, 20039, 13562, 17630, 9460, 16422, 9459, 17629, 12645, 3020]",[11757],Not Found,0.0
+0.5,NASDAQ_COST_2022,Financial report,Did the company declare cash dividends in 2022?,"[12373, 4784, 7078, 12371, 7628, 11531, 11760, 4488, 8852, 12607]",[11760],7,1.0
+0.5,NASDAQ_COST_2022,Financial report,What was the total revenue for the Company in the United States in 2022?,"[11831, 11830, 9279, 16221, 8977, 19719, 7066, 3820, 3939, 16824]",[11831],1,1.0
+0.5,NASDAQ_COST_2022,Financial report,How many employees did the company have in Canada in 2022?,"[11355, 819, 11361, 11484, 12186, 6599, 6598, 6550, 11657, 11702]",[11355],1,1.0
+0.5,NASDAQ_COST_2022,Financial report,Who has the longest tenure as an executive officer at Costco?,"[11372, 13297, 11632, 1074, 11855, 415, 11853, 11690, 7127, 18220]",[11373],Not Found,0.0
+0.5,NASDAQ_COST_2022,Financial report,What was the gross margin percentage for the year 2020?,"[11495, 18037, 19722, 2906, 13162, 12303, 12307, 11496, 12306, 8036]",[11495],1,1.0
+0.5,NASDAQ_COST_2022,Financial report,What was the total average sales per warehouse for the company in the fiscal year 2013?,"[11467, 11466, 6695, 19725, 19723, 18493, 7208, 6694, 13245, 13148]","[11467, 11463]",1,0.5
+0.5,NASDAQ_COST_2022,Financial report,On which page does the document report the information about executive officers?,"[9490, 17503, 9509, 19849, 19551, 19552, 19555, 13759, 19563, 15978]",[11373],Not Found,0.0
+0.5,NYSE_ACN_2020,Financial report,What initiative was launched to assist clients in sustainable cloud migration?,"[19516, 19404, 19717, 19547, 16206, 5173, 18001, 13077, 19718, 12038]",[19404],2,1.0
+0.5,NYSE_ACN_2020,Financial report,Has the company set a goal to achieve net-zero emissions by 2025?,"[2843, 6597, 19404, 1035, 1006, 860, 415, 1031, 1394, 1033]",[19404],3,1.0
+0.5,NYSE_ACN_2020,Financial report,By how much did the net assets of the Europe market increase from fiscal 2018 to fiscal 2020?,"[2879, 6727, 20181, 20021, 3045, 20184, 4204, 1615, 19755, 11471]",[20181],3,1.0
+0.5,NYSE_ACN_2020,Financial report,What are the total expected benefit payments for U.S. Pension Plans for the year 2023?,"[20094, 20130, 20091, 20097, 20082, 20102, 20099, 3572, 16383, 16391]",[20130],2,1.0
+0.5,NYSE_ACN_2020,Financial report,What was the percentage increase in total revenues of the company from fiscal 2019 to fiscal 2020?,"[18069, 19513, 12476, 17774, 19723, 18091, 12474, 18075, 17781, 7088]","[19755, 19747]",Not Found,0.0
+0.5,NYSE_ACN_2020,Financial report,What was the company's operating income for Europe in 2020?,"[19774, 11831, 20181, 20184, 19772, 16221, 19724, 19921, 1606, 16219]",[19774],1,1.0
+0.5,NYSE_ACN_2020,Financial report,What was the company's operating income for the fiscal year 2018?,"[20181, 7360, 17525, 11831, 19921, 8891, 19702, 12473, 19774, 9101]","[19699, 19702]",7,0.5
+0.5,NYSE_ACN_2020,Financial report,Which geographic market of the company contributed the most to the fiscal 2020 revenue for the company?,"[19513, 19649, 19510, 19755, 19749, 19495, 1743, 6695, 6694, 20021]",[19513],1,1.0
+0.5,NYSE_ACN_2020,Financial report,What is the primary message conveyed on page 11 in the document?,"[13175, 19420, 1784, 332, 19851, 9620, 3554, 7599, 9612, 217]",[19429],Not Found,0.0
+0.5,JRS-SCA-ASIA_7FEB2022_PUBLIC,Government,What is the purpose of Bureau Objective 1.3?,"[15, 37, 61, 29, 98, 38, 19, 101, 92, 67]","[11, 15]",1,0.5
+0.5,JRS-SCA-ASIA_7FEB2022_PUBLIC,Government,"Is the C5+1 platform inclusive of objectives for democracy, human rights, and governance?","[42, 94, 32, 60, 93, 57, 46, 41, 874, 47]",[42],1,1.0
+0.5,JRS-SCA-ASIA_7FEB2022_PUBLIC,Government,What are the core values emphasized for democratic sustainability according to Bureau Objective 2.1?,"[44, 45, 17, 46, 50, 28, 43, 93, 24, 19]","[41, 44]",1,0.5
